@@ -1,11 +1,24 @@
+#define RLIGHTS_IMPLEMENTATION      //Importante para que defina las funciones de rlights y eso
+#define PLATFORM_DESKTOP
+
 #include "tinyphysicsengine.h"
 #include <raylib.h>
 #include <raymath.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h> // for measuring time
 
-#define FPS 30
+#include "rlights.h"
+#include "rlgl.h"
+
+#if defined(PLATFORM_DESKTOP)
+    #define GLSL_VERSION            330
+#else   // PLATFORM_RPI, PLATFORM_ANDROID, PLATFORM_WEB
+    #define GLSL_VERSION            100
+#endif
+
+#define FPS 60
 
 #define JOINT_SIZE (TPE_F / 4)
 #define BALL_SIZE (5 * TPE_F / 4)
@@ -44,6 +57,21 @@ TPE_Vec3 helper_heightmapPointLocation(int index)
 TPE_Vec3 environmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 {
     return TPE_envAABoxInside(p,TPE_vec3(0,0,0),TPE_vec3(ROOM_SIZE,ROOM_SIZE,ROOM_SIZE));
+}
+
+Shader initShader(void)
+{
+    // Load shader and set up some uniforms--------------------------------------------------------------
+    Shader shader = LoadShader("../src/sha/basic_lighting.vs", 
+                               "../src/sha/lighting.fs");
+    shader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(shader, "matModel");
+    shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
+
+    int ambientLoc = GetShaderLocation(shader, "ambient");
+    float aux[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    SetShaderValue(shader, ambientLoc, aux, SHADER_UNIFORM_VEC4);
+
+    return shader;
 }
 
 int main(void)
@@ -152,10 +180,26 @@ int main(void)
 
     SetTargetFPS(FPS);
 
+    Shader shader = initShader();
+    Matrix meshTransform = MatrixIdentity();
+    Material meshMaterial = LoadMaterialDefault();
+    meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
+    meshMaterial.shader = shader;
+
+    Light lights[MAX_LIGHTS] = { 0 };
+    lights[0] = CreateLight(LIGHT_POINT, (Vector3){ 100, 100, 100 }, Vector3Zero(), WHITE, shader);
+    lights[0].position = (Vector3){100.0f, 100.0f, 100.0f};
+
     while (!WindowShouldClose())
     {
         // helper_cameraFreeMovement();
         UpdateCamera(&camera, CAMERA_ORBITAL);
+
+        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position.x, SHADER_UNIFORM_VEC3);
+        UpdateLightValues(shader, lights[0]);
+        // Actualiza shader de luz con la posicion de vista de la camara
+        float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
+        SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
 
         // update the 3D model vertex positions:
 
@@ -202,18 +246,19 @@ int main(void)
                 spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
                 spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
-                Matrix meshTransform = MatrixIdentity();
-                Material meshMaterial = LoadMaterialDefault();
-                meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
+                BeginShaderMode(shader);
                 DrawMesh(mesh, meshMaterial, meshTransform);
-                for (int i = 0; i < WATER_JOINTS; ++i)
-                {
-                    Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
-                    DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
-                }
+                    // for (int i = 0; i < WATER_JOINTS; ++i)
+                    // {
+                    //     Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
+                    //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
+                    // }
+                EndShaderMode();
             EndMode3D();
         EndDrawing();
     }
+
+    CloseWindow();
 
     return 0;
 }
