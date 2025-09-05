@@ -209,8 +209,70 @@ int main(void)
             mesh.vertices[i*3 + 1] = (float)joints[i].position.y*SCALE_3D;
             mesh.vertices[i*3 + 2] = (float)joints[i].position.z*SCALE_3D;
         }
+
+        // Recorremos cada triángulo
+        for (int t = 0; t < mesh.triangleCount; t++) {
+            int i0 = triangles[t*3 + 0];
+            int i1 = triangles[t*3 + 1];
+            int i2 = triangles[t*3 + 2];
+
+            // Obtener posiciones de los 3 vértices
+            Vector3 v0 = {
+                mesh.vertices[i0*3 + 0],
+                mesh.vertices[i0*3 + 1],
+                mesh.vertices[i0*3 + 2]
+            };
+            Vector3 v1 = {
+                mesh.vertices[i1*3 + 0],
+                mesh.vertices[i1*3 + 1],
+                mesh.vertices[i1*3 + 2]
+            };
+            Vector3 v2 = {
+                mesh.vertices[i2*3 + 0],
+                mesh.vertices[i2*3 + 1],
+                mesh.vertices[i2*3 + 2]
+            };
+
+            // Calcular dos aristas
+            Vector3 e1 = { v1.x - v0.x, v1.y - v0.y, v1.z - v0.z };
+            Vector3 e2 = { v2.x - v0.x, v2.y - v0.y, v2.z - v0.z };
+
+            // Normal de la cara (producto vectorial)
+            Vector3 n = {
+                e1.y*e2.z - e1.z*e2.y,
+                e1.z*e2.x - e1.x*e2.z,
+                e1.x*e2.y - e1.y*e2.x
+            };
+
+            // Acumular la normal en cada vértice
+            mesh.normals[i0*3 + 0] += n.x;
+            mesh.normals[i0*3 + 1] += n.y;
+            mesh.normals[i0*3 + 2] += n.z;
+
+            mesh.normals[i1*3 + 0] += n.x;
+            mesh.normals[i1*3 + 1] += n.y;
+            mesh.normals[i1*3 + 2] += n.z;
+
+            mesh.normals[i2*3 + 0] += n.x;
+            mesh.normals[i2*3 + 1] += n.y;
+            mesh.normals[i2*3 + 2] += n.z;
+        }
+
+        // Normalizar cada normal de vértice
+        for (int i = 0; i < mesh.vertexCount; i++) {
+            float x = mesh.normals[i*3 + 0];
+            float y = mesh.normals[i*3 + 1];
+            float z = mesh.normals[i*3 + 2];
+            float len = sqrtf(x*x + y*y + z*z);
+            if (len > 0.0f) {
+                mesh.normals[i*3 + 0] = x / len;
+                mesh.normals[i*3 + 1] = y / len;
+                mesh.normals[i*3 + 2] = z / len;
+            }
+        }
         
         UpdateMeshBuffer(mesh, 0, mesh.vertices, sizeof(float) * mesh.vertexCount * 3, 0);
+        UpdateMeshBuffer(mesh, 2, mesh.normals, sizeof(float) * mesh.vertexCount * 3, 0);
 
         // pin the joints at the edges of the grid:
         for (int index = 0; index < WATER_JOINTS; ++index)
@@ -247,7 +309,7 @@ int main(void)
                 spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
                 BeginShaderMode(shader);
-                DrawMesh(mesh, meshMaterial, meshTransform);
+                    DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
                     // {
                     //     Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
