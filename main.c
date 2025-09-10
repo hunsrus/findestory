@@ -1,5 +1,7 @@
 #define RLIGHTS_IMPLEMENTATION      //Importante para que defina las funciones de rlights y eso
 #define PLATFORM_DESKTOP
+#define SERVER_MODE
+#define CLIENT_MODE
 
 #include "tinyphysicsengine.h"
 #include <raylib.h>
@@ -8,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h> // for measuring time
+
+#include <pthread.h>
 
 // --------------- SHADER RELATED ------------------
 #include "rlights.h"
@@ -66,6 +70,7 @@ TPE_Connection tpe_connections[MAX_CONNECTIONS];
 TPE_Joint joints[WATER_JOINTS + 1];
 TPE_Connection connections[WATER_CONNECTIONS];
 TPE_Body bodies[2];
+Vector3 spherePos;
 
 TPE_Vec3 helper_heightmapPointLocation(int index)
 {
@@ -80,7 +85,7 @@ TPE_Vec3 environmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 }
 
 // --------------- NETWORK RELATED ------------------
-
+#include <signal.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <getopt.h>
@@ -88,72 +93,12 @@ TPE_Vec3 environmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 // nbnet implementation
 #define NBNET_IMPL
 
-#if defined(_WIN32) || defined(_WIN64)
-
-/*
- * The following defines are meant to avoid conflicts between raylib and windows.h
- * https://github.com/raysan5/raylib/issues/857
- */
-
-// If defined, the following flags inhibit definition of the indicated items
-#define NOGDICAPMASKS     // CC_*, LC_*, PC_*, CP_*, TC_*, RC_
-#define NOVIRTUALKEYCODES // VK_*
-#define NOWINMESSAGES     // WM_*, EM_*, LB_*, CB_*
-#define NOWINSTYLES       // WS_*, CS_*, ES_*, LBS_*, SBS_*, CBS_*
-#define NOSYSMETRICS      // SM_*
-#define NOMENUS           // MF_*
-#define NOICONS           // IDI_*
-#define NOKEYSTATES       // MK_*
-#define NOSYSCOMMANDS     // SC_*
-#define NORASTEROPS       // Binary and Tertiary raster ops
-#define NOSHOWWINDOW      // SW_*
-#define OEMRESOURCE       // OEM Resource values
-#define NOATOM            // Atom Manager routines
-#define NOCLIPBOARD       // Clipboard routines
-#define NOCOLOR           // Screen colors
-#define NOCTLMGR          // Control and Dialog routines
-#define NODRAWTEXT        // DrawText() and DT_*
-#define NOGDI             // All GDI defines and routines
-#define NOKERNEL          // All KERNEL defines and routines
-#define NOUSER            // All USER defines and routines
-/*#define NONLS             // All NLS defines and routines*/
-#define NOMB              // MB_* and MessageBox()
-#define NOMEMMGR          // GMEM_*, LMEM_*, GHND, LHND, associated routines
-#define NOMETAFILE        // typedef METAFILEPICT
-#define NOMINMAX          // Macros min(a,b) and max(a,b)
-#define NOMSG             // typedef MSG and associated routines
-#define NOOPENFILE        // OpenFile(), OemToAnsi, AnsiToOem, and OF_*
-#define NOSCROLL          // SB_* and scrolling routines
-#define NOSERVICE         // All Service Controller routines, SERVICE_ equates, etc.
-#define NOSOUND           // Sound driver routines
-#define NOTEXTMETRIC      // typedef TEXTMETRIC and associated routines
-#define NOWH              // SetWindowsHook and WH_*
-#define NOWINOFFSETS      // GWL_*, GCL_*, associated routines
-#define NOCOMM            // COMM driver routines
-#define NOKANJI           // Kanji support stuff.
-#define NOHELP            // Help engine interface.
-#define NOPROFILER        // Profiler interface.
-#define NODEFERWINDOWPOS  // DeferWindowPos routines
-#define NOMCX             // Modem Configuration Extensions
-
-// Type required before windows.h inclusion
-typedef struct tagMSG *LPMSG;
-
-#include <winsock2.h> // Has to be included before windows.h
-#include <windows.h>
-
-#endif // WINDOWS
-
-#define _POSIX_C_SOURCE 199309L
-#include <signal.h>
-
 #define PROTOCOL_NAME "raylib-example"
 #define PORT 42042
 
 // nbnet logging, use raylib logging
 
 #define NBN_LogInfo(...) TraceLog(LOG_INFO, __VA_ARGS__)
-
 #define NBN_LogError(...) TraceLog(LOG_ERROR, __VA_ARGS__)
 #define NBN_LogWarning(...) TraceLog(LOG_WARNING, __VA_ARGS__)
 #define NBN_LogDebug(...) TraceLog(LOG_DEBUG, __VA_ARGS__)
@@ -172,21 +117,8 @@ typedef struct tagMSG *LPMSG;
 
 #endif // __EMSCRIPTEN__
 
-#define TICK_RATE FPS // Simulation tick rate
-
-// Window size, used to display window but also to cap the serialized position values within messages
-#define WORLD_WIDTH ROOM_SIZE*SCALE_3D
-#define WORLD_LENGTH ROOM_SIZE*SCALE_3D
-#define WORLD_HEIGHT ROOM_SIZE*SCALE_3D
-
-#define MIN_FLOAT_VAL 0 // Minimum value of networked client float value
-#define MAX_FLOAT_VAL 100 // Maximum value of networked client float value
-
 // Maximum number of connected clients at a time
 #define MAX_CLIENTS 4
-
-// Max number of colors for client to switch between
-#define MAX_COLORS 7
 
 // A code passed by the server when closing a client connection due to being full (max client count reached)
 #define SERVER_FULL_CODE 42
@@ -194,7 +126,6 @@ typedef struct tagMSG *LPMSG;
 // Message ids
 enum
 {
-    CHANGE_COLOR_MESSAGE,
     UPDATE_STATE_MESSAGE,
     GAME_STATE_MESSAGE
 };
@@ -203,34 +134,18 @@ enum
 
 typedef struct
 {
-    Vector3 position;
-    float val;
+    TPE_Unit x;
+    TPE_Unit y;
+    TPE_Unit z;
 } UpdateStateMessage;
-
-// Client colors used for ChangeColorMessage and GameStateMessage messages
-typedef enum
-{
-    CLI_RED,
-    CLI_GREEN,
-    CLI_BLUE,
-    CLI_YELLOW,
-    CLI_ORANGE,
-    CLI_PURPLE,
-    CLI_PINK
-} ClientColor;
-
-typedef struct
-{
-    ClientColor color;
-} ChangeColorMessage;
 
 // Client state, represents a client over the network
 typedef struct
 {
     uint32_t client_id;
-    Vector3 position;
-    float val;
-    ClientColor color;
+    TPE_Unit x;
+    TPE_Unit y;
+    TPE_Unit z;
 } ClientState;
 
 typedef struct
@@ -238,59 +153,6 @@ typedef struct
     unsigned int client_count;
     ClientState client_states[MAX_CLIENTS];
 } GameStateMessage;
-
-// Store all options from the command line
-typedef struct
-{
-    float packet_loss;
-    float packet_duplication;
-    float ping;
-    float jitter;
-} Options;
-
-ChangeColorMessage *ChangeColorMessage_Create(void);
-void ChangeColorMessage_Destroy(ChangeColorMessage *);
-int ChangeColorMessage_Serialize(ChangeColorMessage *msg, NBN_Stream *);
-
-UpdateStateMessage *UpdateStateMessage_Create(void);
-void UpdateStateMessage_Destroy(UpdateStateMessage *);
-int UpdateStateMessage_Serialize(UpdateStateMessage *, NBN_Stream *);
-
-GameStateMessage *GameStateMessage_Create(void);
-void GameStateMessage_Destroy(GameStateMessage *);
-int GameStateMessage_Serialize(GameStateMessage *, NBN_Stream *);
-
-int ReadCommandLine(int, char *[]);
-Options GetOptions(void);
-
-// Command line options
-enum
-{
-    OPT_MESSAGES_COUNT,
-    OPT_PACKET_LOSS,
-    OPT_PACKET_DUPLICATION,
-    OPT_PING,
-    OPT_JITTER
-};
-
-static Options options = {0};
-
-ChangeColorMessage *ChangeColorMessage_Create(void)
-{
-    return malloc(sizeof(ChangeColorMessage));
-}
-
-void ChangeColorMessage_Destroy(ChangeColorMessage *msg)
-{
-    free(msg);
-}
-
-int ChangeColorMessage_Serialize(ChangeColorMessage *msg, NBN_Stream *stream)
-{
-    NBN_SerializeUInt(stream, msg->color, 0, MAX_COLORS - 1);
-
-    return 0;
-}
 
 UpdateStateMessage *UpdateStateMessage_Create(void)
 {
@@ -304,10 +166,9 @@ void UpdateStateMessage_Destroy(UpdateStateMessage *msg)
 
 int UpdateStateMessage_Serialize(UpdateStateMessage *msg, NBN_Stream *stream)
 {
-    NBN_SerializeFloat(stream, msg->position.x, -WORLD_WIDTH/2.0f, WORLD_WIDTH/2.0f, 3);
-    NBN_SerializeFloat(stream, msg->position.y, 0, WORLD_HEIGHT, 3);
-    NBN_SerializeFloat(stream, msg->position.z, -WORLD_LENGTH/2.0f, WORLD_LENGTH/2.0f, 3);
-    NBN_SerializeFloat(stream, msg->val, MIN_FLOAT_VAL, MAX_FLOAT_VAL, 3);
+    NBN_SerializeInt(stream, msg->x, -ROOM_SIZE/2, ROOM_SIZE/2);
+    NBN_SerializeInt(stream, msg->y, -ROOM_SIZE/2, ROOM_SIZE/2);
+    NBN_SerializeInt(stream, msg->z, -ROOM_SIZE/2, ROOM_SIZE/2);
 
     return 0;
 }
@@ -329,69 +190,17 @@ int GameStateMessage_Serialize(GameStateMessage *msg, NBN_Stream *stream)
     for (unsigned int i = 0; i < msg->client_count; i++)
     {
         NBN_SerializeUInt(stream, msg->client_states[i].client_id, 0, UINT_MAX);
-        NBN_SerializeUInt(stream, msg->client_states[i].color, 0, MAX_COLORS - 1);
-        NBN_SerializeFloat(stream, msg->client_states[i].position.x, -WORLD_WIDTH/2.0f, WORLD_WIDTH/2.0f, 3);
-        NBN_SerializeFloat(stream, msg->client_states[i].position.y, 0, WORLD_HEIGHT, 3);
-        NBN_SerializeFloat(stream, msg->client_states[i].position.z, -WORLD_LENGTH/2.0f, WORLD_LENGTH/2.0f, 3);
-        NBN_SerializeFloat(stream, msg->client_states[i].val, MIN_FLOAT_VAL, MAX_FLOAT_VAL, 3);
+        NBN_SerializeInt(stream, msg->client_states[i].x, -ROOM_SIZE/2, ROOM_SIZE/2);
+        NBN_SerializeInt(stream, msg->client_states[i].y, -ROOM_SIZE/2, ROOM_SIZE/2);
+        NBN_SerializeInt(stream, msg->client_states[i].z, -ROOM_SIZE/2, ROOM_SIZE/2);
     }
 
     return 0;
 }
 
-// Parse the command line
-int ReadCommandLine(int argc, char *argv[])
-{
-    int opt;
-    int option_index;
-    struct option long_options[] = {
-        { "packet_loss", required_argument, NULL, OPT_PACKET_LOSS },
-        { "packet_duplication", required_argument, NULL, OPT_PACKET_DUPLICATION },
-        { "ping", required_argument, NULL, OPT_PING },
-        { "jitter", required_argument, NULL, OPT_JITTER }
-    };
+// server specific
 
-    while ((opt = getopt_long(argc, argv, "", long_options, &option_index)) != -1)
-    {
-        switch (opt)
-        {
-            case OPT_PACKET_LOSS:
-                options.packet_loss = atof(optarg);
-                break;
-
-            case OPT_PACKET_DUPLICATION:
-                options.packet_duplication = atof(optarg);
-                break;
-
-            case OPT_PING:
-                options.ping = atof(optarg);
-                break;
-
-            case OPT_JITTER:
-                options.jitter = atof(optarg);
-                break;
-
-            case '?':
-                return -1;
-
-            default:
-                return -1;
-        }
-    }
-
-    return 0;
-}
-
-// Return the command line options
-Options GetOptions(void)
-{
-    return options;
-}
-
-// --------------- SERVER RELATED ------------------
-
-// #define _POSIX_C_SOURCE 199309L
-// #include <stdio.h>
+#ifdef SERVER_MODE
 
 // For Sleep function
 #if defined(__EMSCRIPTEN__)
@@ -415,29 +224,29 @@ typedef struct
 } Client;
 
 // Array of connected clients, NULL means that the slot is free (i.e no clients)
-static Client *connected_clients[MAX_CLIENTS] = {NULL};
+static Client *clients[MAX_CLIENTS] = {NULL};
 
 // Number of currently connected clients
 static unsigned int client_count = 0;
 
 // Spawn positions
 static Vector3 spawns[] = {
-    (Vector3){50, 0, 50},
-    (Vector3){WORLD_WIDTH - 100, 0, 50},
-    (Vector3){50, 0, WORLD_LENGTH - 100},
-    (Vector3){WORLD_WIDTH - 100, 0, WORLD_LENGTH - 100}
+    (Vector3){0, 0, 0},
+    (Vector3){0, 0, 0},
+    (Vector3){0, 0, 0},
+    (Vector3){0, 0, 0}
 };
 
-static void AcceptConnection(Vector3 position, NBN_ConnectionHandle conn)
+static void AcceptConnection(TPE_Unit x, TPE_Unit y, TPE_Unit z, NBN_ConnectionHandle conn)
 {
     NBN_WriteStream ws;
-    uint8_t data[255];
+    uint8_t data[32];
 
     NBN_WriteStream_Init(&ws, data, sizeof(data));
 
-    NBN_SerializeFloat((NBN_Stream *)&ws, position.x, -WORLD_WIDTH/2.0f, WORLD_WIDTH/2.0f, 3);
-    NBN_SerializeFloat((NBN_Stream *)&ws, position.y, 0, WORLD_HEIGHT, 3);
-    NBN_SerializeFloat((NBN_Stream *)&ws, position.z, -WORLD_LENGTH/2.0f, WORLD_LENGTH/2.0f, 3);
+    NBN_SerializeInt((NBN_Stream *)&ws, x, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt((NBN_Stream *)&ws, y, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt((NBN_Stream *)&ws, z, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeUInt((NBN_Stream *)&ws, conn, 0, UINT_MAX);
 
     // Accept the connection
@@ -467,7 +276,13 @@ static int HandleNewConnection(void)
     // Get a spawning position for the client
     Vector3 spawn = spawns[client_handle % MAX_CLIENTS];
 
-    AcceptConnection(spawn, client_handle);
+    // Build some "initial" data that will be sent to the connected client
+
+    TPE_Unit x = spawn.x;
+    TPE_Unit y = spawn.y;
+    TPE_Unit z = spawn.z;
+
+    AcceptConnection(x, y, z, client_handle);
 
     TraceLog(LOG_INFO, "Connection accepted (ID: %d)", client_handle);
 
@@ -476,10 +291,10 @@ static int HandleNewConnection(void)
     // Find a free slot in the clients array and create a new client
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (connected_clients[i] == NULL)
+        if (clients[i] == NULL)
         {
             client = malloc(sizeof(Client));
-            connected_clients[i] = client;
+            clients[i] = client;
 
             break;
         }
@@ -490,7 +305,7 @@ static int HandleNewConnection(void)
     client->client_handle = client_handle; // Store the nbnet connection ID
 
     // Fill the client state with initial spawning data
-    client->state = (ClientState){.client_id = client_handle, .position = Vector3Zero(), .color = CLI_RED, .val = 0};
+    client->state = (ClientState){.client_id = client_handle, .x = 0, .y = 0, .z = 0};
 
     client_count++;
 
@@ -501,20 +316,20 @@ static Client *FindClientById(uint32_t client_id)
 {
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (connected_clients[i] && connected_clients[i]->state.client_id == client_id)
-            return connected_clients[i];
+        if (clients[i] && clients[i]->state.client_id == client_id)
+            return clients[i];
     }
 
     return NULL;
 }
 
-static void ServerDestroyClient(Client *client)
+static void DestroyClient(Client *client)
 {
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (connected_clients[i] && connected_clients[i]->state.client_id == client->state.client_id)
+        if (clients[i] && clients[i]->state.client_id == client->state.client_id)
         {
-            connected_clients[i] = NULL;
+            clients[i] = NULL;
 
             return;
         }
@@ -533,7 +348,7 @@ static void HandleClientDisconnection()
 
     assert(client);
 
-    ServerDestroyClient(client);
+    DestroyClient(client);
 
     client_count--;
 }
@@ -541,20 +356,11 @@ static void HandleClientDisconnection()
 static void HandleUpdateStateMessage(UpdateStateMessage *msg, Client *sender)
 {
     // Update the state of the client with the data from the received UpdateStateMessage message
-    sender->state.position.x = msg->position.x;
-    sender->state.position.y = msg->position.y;
-    sender->state.position.z = msg->position.z;
-    sender->state.val = msg->val;
+    sender->state.x = msg->x;
+    sender->state.y = msg->y;
+    sender->state.z = msg->z;
 
     UpdateStateMessage_Destroy(msg);
-}
-
-static void HandleChangeColorMessage(ChangeColorMessage *msg, Client *sender)
-{
-    // Update the client color
-    sender->state.color = msg->color;
-
-    ChangeColorMessage_Destroy(msg);
 }
 
 static void ServerHandleReceivedMessage(void)
@@ -572,11 +378,6 @@ static void ServerHandleReceivedMessage(void)
         case UPDATE_STATE_MESSAGE:
             // The server received a client state update
             HandleUpdateStateMessage(msg_info.data, sender);
-            break;
-
-        case CHANGE_COLOR_MESSAGE:
-            // The server received a client switch color action
-            HandleChangeColorMessage(msg_info.data, sender);
             break;
     }
 }
@@ -614,17 +415,15 @@ static int BroadcastGameState(void)
     // Loop over the clients and build an array of ClientState
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        Client *client = connected_clients[i];
+        Client *client = clients[i];
 
         if (client == NULL) continue;
 
         client_states[client_index] = (ClientState) {
                 .client_id = client->state.client_id,
-                .position.x = client->state.position.x,
-                .position.y = client->state.position.y,
-                .position.z = client->state.position.z,
-                .val = client->state.val,
-                .color = client->state.color
+                .x = client->state.x,
+                .y = client->state.y,
+                .z = client->state.z,
         };
         client_index++;
     }
@@ -634,7 +433,7 @@ static int BroadcastGameState(void)
     // Broadcast the game state to all clients
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        Client *client = connected_clients[i];
+        Client *client = clients[i];
 
         if (client == NULL) continue;
 
@@ -653,56 +452,42 @@ static int BroadcastGameState(void)
     return 0;
 }
 
-static bool SERVER_RUNNING = true;
+static bool running = true;
+static bool SERVER_STARTED = false;
 
 #ifndef __EMSCRIPTEN__
-
 static void SigintHandler(int dummy)
 {
-    SERVER_RUNNING = false;
+    running = false;
 }
-
 #endif
 
-int serverHandler(int argc, char *argv[])
+void* serverHandler(void* args)
 {
     #ifndef __EMSCRIPTEN__
     signal(SIGINT, SigintHandler);
 #endif
 
-    // Read command line arguments
-    if (ReadCommandLine(argc, argv))
-    {
-        printf("Usage: server [--packet_loss=<value>] [--packet_duplication=<value>] [--ping=<value>] \
-                [--jitter=<value>]\n");
-
-        return 1;
-    }
-
     // Even though we do not display anything we still use raylib logging capacibilities
     SetTraceLogLevel(LOG_DEBUG);
 
-#ifdef __EMSCRIPTEN__
-    NBN_WebRTC_Register(); // Register the WebRTC driver
-#else
-    NBN_UDP_Register(); // Register the UDP driver
+// #ifdef __EMSCRIPTEN__
+//     NBN_WebRTC_Register(); // Register the WebRTC driver
+// #else
+//     NBN_UDP_Register(); // Register the UDP driver
 
-#endif // __EMSCRIPTEN__
+// #endif // __EMSCRIPTEN__
 
     // Start the server with a protocol name and a port
     if (NBN_GameServer_StartEx(PROTOCOL_NAME, PORT) < 0)
     {
         TraceLog(LOG_ERROR, "Game server failed to start. Exit");
+        fprintf(stderr, "[SERVER] Game server failed to start. Exit\n");
 
         return 1;
     }
 
     // Register messages, have to be done after NBN_GameServer_StartEx
-    NBN_GameServer_RegisterMessage(
-        CHANGE_COLOR_MESSAGE,
-        (NBN_MessageBuilder)ChangeColorMessage_Create,
-        (NBN_MessageDestructor)ChangeColorMessage_Destroy,
-        (NBN_MessageSerializer)ChangeColorMessage_Serialize);
     NBN_GameServer_RegisterMessage(
             UPDATE_STATE_MESSAGE,
             (NBN_MessageBuilder)UpdateStateMessage_Create,
@@ -714,15 +499,11 @@ int serverHandler(int argc, char *argv[])
             (NBN_MessageDestructor)GameStateMessage_Destroy,
             (NBN_MessageSerializer)GameStateMessage_Serialize);
 
-    // Network conditions simulated variables (read from the command line, default is always 0)
-    NBN_GameServer_SetPing(GetOptions().ping);
-    NBN_GameServer_SetJitter(GetOptions().jitter);
-    NBN_GameServer_SetPacketLoss(GetOptions().packet_loss);
-    NBN_GameServer_SetPacketDuplication(GetOptions().packet_duplication); 
+    float tick_dt = 1.f / FPS; // Tick delta time
 
-    float tick_dt = 1.f / TICK_RATE; // Tick delta time
+    SERVER_STARTED = true;
 
-    while (SERVER_RUNNING)
+    while (running)
     {
         int ev;
 
@@ -732,6 +513,7 @@ int serverHandler(int argc, char *argv[])
             if (ev < 0)
             {
                 TraceLog(LOG_ERROR, "An occured while polling network events. Exit");
+                fprintf(stderr, "[SERVER] An error occured while polling network events. Exit\n");
 
                 break;
             }
@@ -744,6 +526,7 @@ int serverHandler(int argc, char *argv[])
         if (BroadcastGameState() < 0)
         {
             TraceLog(LOG_ERROR, "An occured while broadcasting game states. Exit");
+            fprintf(stderr, "[SERVER] An error occured while broadcasting game states. Exit\n");
 
             break;
         }
@@ -752,6 +535,7 @@ int serverHandler(int argc, char *argv[])
         if (NBN_GameServer_SendPackets() < 0)
         {
             TraceLog(LOG_ERROR, "An occured while flushing the send queue. Exit");
+            fprintf(stderr, "[SERVER] An error occured while flushing the send queue. Exit\n");
 
             break;
         }
@@ -778,16 +562,11 @@ int serverHandler(int argc, char *argv[])
 
     return 0;
 }
+#endif
 
-// --------------- CLIENT RELATED ------------------
-// #define _POSIX_C_SOURCE 199309L
-// #include <stdio.h>
+// client specific
 
-// #ifdef __EMSCRIPTEN__
-// #include <emscripten/emscripten.h>
-// #endif
-
-// #include "shared.h"
+#ifdef CLIENT_MODE
 
 static bool connected = false;         // Connected to the server
 static bool disconnected = false;      // Got disconnected from the server
@@ -796,7 +575,7 @@ static int server_close_code;          // The server code used when closing the 
 static ClientState local_client_state; // The state of the local client
 
 // Array to hold other client states (`MAX_CLIENTS - 1` because we don't need to store the state of the local client)
-static ClientState *clients[MAX_CLIENTS - 1] = {NULL};
+static ClientState *other_clients[MAX_CLIENTS - 1] = {NULL};
 
 /*
  * Array of client ids that were updated in the last received GameStateMessage.
@@ -805,49 +584,40 @@ static ClientState *clients[MAX_CLIENTS - 1] = {NULL};
 static int updated_ids[MAX_CLIENTS];
 
 // Number of currently connected clients
-// static unsigned int client_count = 0;
+static unsigned int local_client_count = 0;
 
-// Conversion table between client color values and raylib colors
-Color client_colors_to_raylib_colors[] = {
-    RED,    // CLI_RED
-    LIME,   // CLI_GREEN
-    BLUE,   // CLI_BLUE
-    YELLOW, // CLI_YELLOW
-    ORANGE, // CLI_ORANGE
-    PURPLE, // CLI_PURPLE
-    PINK    // CLI_PINK
-};
-
-static void SpawnLocalClient(Vector3 position, uint32_t client_id)
+static void SpawnLocalClient(int x, int y, int z, uint32_t client_id)
 {
-    TraceLog(LOG_INFO, "Received spawn message, position: (%f, %f, %f), client id: %d", position.x, position.y, position.z, client_id);
+    TraceLog(LOG_INFO, "Received spawn message, position: (%d, %d), client id: %d", x, y, client_id);
 
     // Update the local client state based on spawn info sent by the server
     local_client_state.client_id = client_id;
-    local_client_state.position.x = position.x;
-    local_client_state.position.y = position.y;
-    local_client_state.position.z = position.z;
+    local_client_state.x = x;
+    local_client_state.y = y;
+    local_client_state.z = z;
 
     spawned = true;
 }
 
 static void HandleConnection(void)
 {
-    uint8_t data[255];
+    uint8_t data[32];
     unsigned int data_len = NBN_GameClient_ReadServerData(data);
     NBN_ReadStream rs;
 
     NBN_ReadStream_Init(&rs, data, data_len);
 
-    Vector3 position = Vector3Zero();
+    int x = 0;
+    int y = 0;
+    int z = 0;
     unsigned int client_id = 0;
 
-    NBN_SerializeFloat(((NBN_Stream *)&rs), position.x, -WORLD_WIDTH/2.0f, WORLD_WIDTH/2.0f, 3);
-    NBN_SerializeFloat(((NBN_Stream *)&rs), position.y, 0, WORLD_HEIGHT, 3);
-    NBN_SerializeFloat(((NBN_Stream *)&rs), position.z, -WORLD_LENGTH/2.0f, WORLD_LENGTH/2.0f, 3);
+    NBN_SerializeInt(((NBN_Stream *)&rs), x, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt(((NBN_Stream *)&rs), y, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt(((NBN_Stream *)&rs), z, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeUInt(((NBN_Stream *)&rs), client_id, 0, UINT_MAX);
 
-    SpawnLocalClient(position, client_id);
+    SpawnLocalClient(x, y, z, client_id);
 
     connected = true;
 }
@@ -866,7 +636,7 @@ static bool ClientExists(uint32_t client_id)
 {
     for (int i = 0; i < MAX_CLIENTS - 1; i++)
     {
-        if (clients[i] && clients[i]->client_id == client_id)
+        if (other_clients[i] && other_clients[i]->client_id == client_id)
             return true;
     }
 
@@ -876,17 +646,17 @@ static bool ClientExists(uint32_t client_id)
 static void CreateClient(ClientState state)
 {
     TraceLog(LOG_DEBUG, "CreateClient %d", state.client_id);
-    assert(client_count < MAX_CLIENTS - 1);
+    assert(local_client_count < MAX_CLIENTS - 1);
 
     ClientState *client = NULL;
 
     // Create a new remote client state and store it in the remote clients array at the first free slot found
     for (int i = 0; i < MAX_CLIENTS - 1; i++)
     {
-        if (clients[i] == NULL)
+        if (other_clients[i] == NULL)
         {
             client = malloc(sizeof(ClientState));
-            clients[i] = client;
+            other_clients[i] = client;
 
             break;
         }
@@ -897,7 +667,7 @@ static void CreateClient(ClientState state)
     // Fill the newly created client state with client state info received from the server
     memcpy(client, &state, sizeof(ClientState));
 
-    client_count++;
+    local_client_count++;
 
     TraceLog(LOG_INFO, "New remote client (ID: %d)", client->client_id);
 }
@@ -909,9 +679,9 @@ static void UpdateClient(ClientState state)
     // Find the client matching the client id of the received remote client state
     for (int i = 0; i < MAX_CLIENTS - 1; i++)
     {
-        if (clients[i] && clients[i]->client_id == state.client_id)
+        if (other_clients[i] && other_clients[i]->client_id == state.client_id)
         {
-            client = clients[i];
+            client = other_clients[i];
 
             break;
         }
@@ -923,20 +693,20 @@ static void UpdateClient(ClientState state)
     memcpy(client, &state, sizeof(ClientState));
 }
 
-static void DestroyClient(uint32_t client_id)
+static void LocalDestroyClient(uint32_t client_id)
 {
     // Find the client matching the client id and destroy it
     for (int i = 0; i < MAX_CLIENTS - 1; i++)
     {
-        ClientState *client = clients[i];
+        ClientState *client = other_clients[i];
 
         if (client && client->client_id == client_id)
         {
             TraceLog(LOG_INFO, "Destroy disconnected client (ID: %d)", client->client_id);
 
             free(client);
-            clients[i] = NULL;
-            client_count--;
+            other_clients[i] = NULL;
+            local_client_count--;
 
             return;
         }
@@ -951,10 +721,10 @@ static void DestroyDisconnectedClients(void)
      */
     for (int i = 0; i < MAX_CLIENTS - 1; i++)
     {
-        if (clients[i] == NULL)
+        if (other_clients[i] == NULL)
             continue;
 
-        uint32_t client_id = clients[i]->client_id;
+        uint32_t client_id = other_clients[i]->client_id;
         bool disconnected = true;
 
         for (int j = 0; j < MAX_CLIENTS; j++)
@@ -968,7 +738,7 @@ static void DestroyDisconnectedClients(void)
         }
 
         if (disconnected)
-            DestroyClient(client_id);
+            LocalDestroyClient(client_id);
     }
 }
 
@@ -1005,7 +775,7 @@ static void HandleGameStateMessage(GameStateMessage *msg)
     GameStateMessage_Destroy(msg);
 }
 
-static void HandleReceivedMessage(void)
+static void ClientHandleReceivedMessage(void)
 {
     // Fetch info about the last received message
     NBN_MessageInfo msg_info = NBN_GameClient_GetMessageInfo();
@@ -1035,7 +805,7 @@ static void HandleGameClientEvent(int ev)
 
     case NBN_MESSAGE_RECEIVED:
         // We received a message from the server
-        HandleReceivedMessage();
+        ClientHandleReceivedMessage();
         break;
     }
 }
@@ -1045,10 +815,9 @@ static int SendPositionUpdate(void)
     UpdateStateMessage *msg = UpdateStateMessage_Create();
 
     // Fill message data
-    msg->position.x = local_client_state.position.x;
-    msg->position.y = local_client_state.position.y;
-    msg->position.z = local_client_state.position.z;
-    msg->val = local_client_state.val;
+    msg->x = local_client_state.x;
+    msg->y = local_client_state.y;
+    msg->z = local_client_state.z;
 
     // Unreliably send it to the server
     if (NBN_GameClient_SendUnreliableMessage(UPDATE_STATE_MESSAGE, msg) < 0)
@@ -1057,211 +826,56 @@ static int SendPositionUpdate(void)
     return 0;
 }
 
-static int SendColorUpdate(void)
-{
-    ChangeColorMessage *msg = ChangeColorMessage_Create();
-
-    // Fill message data
-    msg->color = local_client_state.color;
-
-    // Reliably send it to the server
-    if (NBN_GameClient_SendReliableMessage(CHANGE_COLOR_MESSAGE, msg) < 0)
-        return -1;
-
-    return 0;
-}
-
-bool color_key_pressed = false;
-
-static int Update(void)
-{
-    if (!spawned)
-        return 0;
-
-    // Movement code
-    if (IsKeyDown(KEY_UP))
-        local_client_state.position.z = MAX(-WORLD_LENGTH/2.0f, local_client_state.position.z - 1);
-    else if (IsKeyDown(KEY_DOWN))
-        local_client_state.position.z = MIN(WORLD_LENGTH/2.0f, local_client_state.position.z + 1);
-
-    if (IsKeyDown(KEY_LEFT))
-        local_client_state.position.x = MAX(-WORLD_WIDTH/2.0f, local_client_state.position.x - 1);
-    else if (IsKeyDown(KEY_RIGHT))
-        local_client_state.position.x = MIN(WORLD_WIDTH/2.0f, local_client_state.position.x + 1);
-
-    // Color switching
-    if (IsKeyDown(KEY_SPACE) && !color_key_pressed)
-    {
-        color_key_pressed = true;
-        local_client_state.color = (local_client_state.color + 1) % MAX_COLORS;
-
-        TraceLog(LOG_INFO, "Switched color, new color: %d", local_client_state.color);
-
-        if (SendColorUpdate() < 0)
-        {
-            TraceLog(LOG_WARNING, "Failed to send color update");
-
-            return -1;
-        }
-    }
-
-    if (IsKeyUp(KEY_SPACE))
-        color_key_pressed = false;
-
-    // Increasing/Decreasing floating point value
-    if (IsKeyDown(KEY_K))
-        local_client_state.val = MIN(MAX_FLOAT_VAL, local_client_state.val + 0.005);
-
-    if (IsKeyDown(KEY_J))
-        local_client_state.val = MAX(MIN_FLOAT_VAL, local_client_state.val - 0.005);
-
-    // Send the latest local client state to the server
-    if (SendPositionUpdate() < 0)
-    {
-        TraceLog(LOG_WARNING, "Failed to send client state update");
-
-        return -1;
-    }
-
-    return 0;
-}
-
-void DrawClient(ClientState *state, bool is_local)
-{
-    Color color = client_colors_to_raylib_colors[state->color];
-    const char *text = TextFormat("%.3f", state->val);
-    int font_size = 20;
-    int text_width = MeasureText(text, font_size);
-
-    DrawText(text, (state->position.x + 25) - text_width / 2, state->position.y - 20, font_size, color);
-    DrawSphereEx(state->position, 10.0f, 10, 10, color);
-
-    if(is_local)
-    {
-        DrawCylinderEx(Vector3Add(state->position, (Vector3){0.0f,20.0f,0.0f}), Vector3Add(state->position, (Vector3){0.0f,15.0f,0.0f}), 5.0f, 0.5f, 10, GREEN);
-    }
-}
-
-void DrawHUD(void)
-{
-    NBN_ConnectionStats stats = NBN_GameClient_GetStats();
-    unsigned int ping = stats.ping * 1000;
-    unsigned int packet_loss = stats.packet_loss * 100;
-
-    DrawText(TextFormat("FPS: %d", GetFPS()), 450, 350, 32, MAROON);
-    DrawText(TextFormat("Ping: %d ms", ping), 450, 400, 32, MAROON);
-    DrawText(TextFormat("Packet loss: %d %%", packet_loss), 450, 450, 32, MAROON);
-    DrawText(TextFormat("Upload: %.1f Bps", stats.upload_bandwidth), 450, 500, 32, MAROON);
-    DrawText(TextFormat("Download: %.1f Bps", stats.download_bandwidth), 450, 550, 32, MAROON);
-}
-
-void Draw(void)
-{
-    BeginDrawing();
-    ClearBackground(LIGHTGRAY);
-
-    if (disconnected)
-    {
-        if (server_close_code == -1)
-        {
-            if (connected)
-                DrawText("Connection to the server was lost", 265, 280, 20, RED);
-            else
-                DrawText("Server cannot be reached", 265, 280, 20, RED);
-        }
-        else if (server_close_code == SERVER_FULL_CODE)
-        {
-            DrawText("Cannot connect, server is full", 265, 280, 20, RED);
-        }
-    }
-    else if (connected && spawned)
-    {
-        BeginMode3D(camera);
-            // Start by drawing the remote clients
-            for (int i = 0; i < MAX_CLIENTS - 1; i++)
-            {
-                if(clients[i])
-                {
-                    if(clients[i]->client_id != local_client_state.client_id)
-                    {
-                        DrawClient(clients[i], false);
-                        fprintf(stdout, "id: %d, local id: %d\n", clients[i]->client_id, local_client_state.client_id);
-                    }
-                }
-            }
-
-            // Then draw the local client
-            DrawClient(&local_client_state, true);
-        EndMode3D();
-
-        // Finally draw the HUD
-        DrawHUD();
-    }
-    else
-    {
-        DrawText("Connecting to server...", 265, 280, 20, RED);
-    }
-
-    EndDrawing();
-}
-
-static double tick_dt = 1.0 / TICK_RATE; // Tick delta time (in seconds)
-static double acc = 0;
-
-void UpdateAndDraw(void)
-{
-    // Very basic fixed timestep implementation.
-    // Target FPS is either 100 (in desktop) or whatever the browser frame rate is (in web) but the simulation runs at
-    // TICK_RATE ticks per second.
-    //
-    // We keep track of accumulated times and simulates as many tick as we can using that time
-
-    acc += GetFrameTime(); // Accumulates time
-
-    // Simulates as many ticks as we can
-    while (acc >= tick_dt)
-    {
-        int ev;
-
-        while ((ev = NBN_GameClient_Poll()) != NBN_NO_EVENT)
-        {
-            if (ev < 0)
-            {
-                TraceLog(LOG_WARNING, "An occured while polling network events. Exit");
-
-                break;
-            }
-
-            HandleGameClientEvent(ev);
-        }
-
-        if (connected && !disconnected)
-        {
-            if (Update() < 0)
-                break;
-        }
-
-        if (!disconnected)
-        {
-            if (NBN_GameClient_SendPackets() < 0)
-            {
-                TraceLog(LOG_ERROR, "An occured while flushing the send queue. Exit");
-
-                break;
-            }
-        }
-
-        acc -= tick_dt; // Consumes time
-    }
-
-    Draw();
-}
+#endif
 
 // --------------- MAIN ------------------
 
-int main(void)
+int main(int argc, char *argv[])
 {
-    InitWindow(640,480,"findestory");
+    InitWindow(128,128,"findestory");
+    SetTargetFPS(FPS);
+
+    #ifdef __EMSCRIPTEN__
+        NBN_WebRTC_Register(); // Register the WebRTC driver
+    #else
+        NBN_UDP_Register(); // Register the UDP driver
+    #endif // __EMSCRIPTEN__
+
+#ifdef SERVER_MODE
+    // init server thread
+    pthread_t server_thread;
+    pthread_create(&server_thread, NULL, serverHandler, NULL);
+
+    // esperar a que el server inicie (principalmente para que registre el driver que va a usar también el cliente)
+    while(!SERVER_STARTED){}
+#endif
+#ifdef CLIENT_MODE
+    // init client
+
+    // Initialize the client with a protocol name (must be the same than the one used by the server), the server ip address and port
+
+    // Start the client with a protocol name (must be the same than the one used by the server)
+    // the server host and port
+    if (NBN_GameClient_StartEx(PROTOCOL_NAME, "127.0.0.1", PORT, NULL, 0) < 0)
+    {
+        TraceLog(LOG_WARNING, "Game client failed to start. Exit");
+
+        return 1;
+    }
+
+    // Register messages, have to be done after NBN_GameClient_StartEx
+    // Messages need to be registered on both client and server side
+    NBN_GameClient_RegisterMessage(
+        UPDATE_STATE_MESSAGE,
+        (NBN_MessageBuilder)UpdateStateMessage_Create,
+        (NBN_MessageDestructor)UpdateStateMessage_Destroy,
+        (NBN_MessageSerializer)UpdateStateMessage_Serialize);
+    NBN_GameClient_RegisterMessage(
+        GAME_STATE_MESSAGE,
+        (NBN_MessageBuilder)GameStateMessage_Create,
+        (NBN_MessageDestructor)GameStateMessage_Destroy,
+        (NBN_MessageSerializer)GameStateMessage_Serialize);
+#endif
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
 
@@ -1360,9 +974,7 @@ int main(void)
     }
     for (int i = 0; i < mesh.triangleCount*3; i++) mesh.indices[i] = triangles[i];
     
-    UploadMesh(&mesh, true);
-
-    SetTargetFPS(FPS);
+    UploadMesh(&mesh, true);    
 
     Shader shader = initShader();
     Matrix meshTransform = MatrixIdentity();
@@ -1376,6 +988,21 @@ int main(void)
 
     while (!WindowShouldClose())
     {
+#ifdef CLIENT_MODE
+        int ev;
+
+        while ((ev = NBN_GameClient_Poll()) != NBN_NO_EVENT)
+        {
+            if (ev < 0)
+            {
+                TraceLog(LOG_WARNING, "An occured while polling network events. Exit");
+
+                break;
+            }
+
+            HandleGameClientEvent(ev);
+        }
+
         // helper_cameraFreeMovement();
         UpdateCamera(&camera, CAMERA_ORBITAL);
 
@@ -1484,13 +1111,43 @@ int main(void)
         else if (IsKeyDown(KEY_X))
             TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
 
+        spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
+        spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
+        spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
+    
+        if (connected && !disconnected)
+        {
+            if(!spawned) break;
+            
+            local_client_state.x = 0;
+            local_client_state.y = 0;
+            local_client_state.z = 0;
+
+            // Send the latest local client state to the server
+            if (SendPositionUpdate() < 0)
+            {
+                TraceLog(LOG_WARNING, "Failed to send client state update");
+
+                return -1;
+            }
+        }
+
+        if (!disconnected)
+        {
+            if (NBN_GameClient_SendPackets() < 0)
+            {
+                TraceLog(LOG_ERROR, "An occured while flushing the send queue. Exit");
+
+                break;
+            }
+        }
+#endif
+
+
+
         BeginDrawing();
             ClearBackground(LIGHTGRAY);
             BeginMode3D(camera);
-                Vector3 spherePos;
-                spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
-                spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
-                spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
                 BeginShaderMode(shader);
                     DrawMesh(mesh, meshMaterial, meshTransform);
@@ -1506,6 +1163,23 @@ int main(void)
     }
 
     CloseWindow();
+
+    // TODO
+    // crear una función para cerrar el cliente y el server
+    // que libere los recursos referidos al driver una única vez, porque lo comparten
+
+// #ifdef CLIENT_MODE
+//     NBN_GameClient_Stop();
+//     while(!disconnected){};
+//     fprintf(stderr, "[CLIENT] Connection closed\n");
+// #endif
+
+#ifdef SERVER_MODE
+    running = false;
+    // Wait for thread to finish
+    pthread_join(server_thread, NULL);
+    fprintf(stderr, "[SERVER] Server has stopped\n");
+#endif
 
     return 0;
 }
