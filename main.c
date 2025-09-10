@@ -183,7 +183,8 @@ int main(void)
     Shader shader = initShader();
     Matrix meshTransform = MatrixIdentity();
     Material meshMaterial = LoadMaterialDefault();
-    meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
+    // meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
+    meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){0,90,190,100};
     meshMaterial.shader = shader;
 
     Light lights[MAX_LIGHTS] = { 0 };
@@ -212,9 +213,12 @@ int main(void)
 
         // Recorremos cada triángulo
         for (int t = 0; t < mesh.triangleCount; t++) {
-            int i0 = triangles[t*3 + 0];
-            int i1 = triangles[t*3 + 1];
-            int i2 = triangles[t*3 + 2];
+            // int i0 = triangles[t*3 + 0];
+            // int i1 = triangles[t*3 + 1];
+            // int i2 = triangles[t*3 + 2];
+            int i0 = mesh.indices[t*3];
+            int i1 = mesh.indices[t*3+1];
+            int i2 = mesh.indices[t*3+2];
 
             // Obtener posiciones de los 3 vértices
             Vector3 v0 = {
@@ -301,7 +305,7 @@ int main(void)
             TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
 
         BeginDrawing();
-            ClearBackground(GRAY);
+            ClearBackground(LIGHTGRAY);
             BeginMode3D(camera);
                 Vector3 spherePos;
                 spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
