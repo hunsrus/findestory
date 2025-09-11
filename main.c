@@ -123,6 +123,9 @@ TPE_Vec3 environmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 // A code passed by the server when closing a client connection due to being full (max client count reached)
 #define SERVER_FULL_CODE 42
 
+// is a udp driver already registered?
+static bool UDP_DRIVER_REGISTERED = false;
+
 // Message ids
 enum
 {
@@ -462,7 +465,7 @@ static void SigintHandler(int dummy)
 }
 #endif
 
-void* serverHandler(void* args)
+int serverHandler(void* args)
 {
     #ifndef __EMSCRIPTEN__
     signal(SIGINT, SigintHandler);
@@ -585,6 +588,8 @@ static int updated_ids[MAX_CLIENTS];
 
 // Number of currently connected clients
 static unsigned int local_client_count = 0;
+
+static bool CLIENT_STARTED = false;
 
 static void SpawnLocalClient(int x, int y, int z, uint32_t client_id)
 {
@@ -826,56 +831,27 @@ static int SendPositionUpdate(void)
     return 0;
 }
 
+void DrawClient(ClientState *state, bool is_local)
+{
+    // int font_size = 20;
+    // int text_width = MeasureText(text, font_size);
+    Vector3 position = (Vector3){state->x*SCALE_3D, state->y*SCALE_3D, state->z*SCALE_3D};
+    DrawSphereEx(position, BALL_SIZE*SCALE_3D, 10, 10, GREEN);
+
+    if(is_local)
+    {
+        DrawCylinderEx(Vector3Add(position, (Vector3){0.0f,20.0f,0.0f}), Vector3Add(position, (Vector3){0.0f,15.0f,0.0f}), BALL_SIZE*SCALE_3D, BALL_SIZE*SCALE_3D, 10, GREEN);
+    }
+}
+
 #endif
 
 // --------------- MAIN ------------------
 
 int main(int argc, char *argv[])
 {
-    InitWindow(128,128,"findestory");
+    InitWindow(480,480,"findestory");
     SetTargetFPS(FPS);
-
-    #ifdef __EMSCRIPTEN__
-        NBN_WebRTC_Register(); // Register the WebRTC driver
-    #else
-        NBN_UDP_Register(); // Register the UDP driver
-    #endif // __EMSCRIPTEN__
-
-#ifdef SERVER_MODE
-    // init server thread
-    pthread_t server_thread;
-    pthread_create(&server_thread, NULL, serverHandler, NULL);
-
-    // esperar a que el server inicie (principalmente para que registre el driver que va a usar también el cliente)
-    while(!SERVER_STARTED){}
-#endif
-#ifdef CLIENT_MODE
-    // init client
-
-    // Initialize the client with a protocol name (must be the same than the one used by the server), the server ip address and port
-
-    // Start the client with a protocol name (must be the same than the one used by the server)
-    // the server host and port
-    if (NBN_GameClient_StartEx(PROTOCOL_NAME, "127.0.0.1", PORT, NULL, 0) < 0)
-    {
-        TraceLog(LOG_WARNING, "Game client failed to start. Exit");
-
-        return 1;
-    }
-
-    // Register messages, have to be done after NBN_GameClient_StartEx
-    // Messages need to be registered on both client and server side
-    NBN_GameClient_RegisterMessage(
-        UPDATE_STATE_MESSAGE,
-        (NBN_MessageBuilder)UpdateStateMessage_Create,
-        (NBN_MessageDestructor)UpdateStateMessage_Destroy,
-        (NBN_MessageSerializer)UpdateStateMessage_Serialize);
-    NBN_GameClient_RegisterMessage(
-        GAME_STATE_MESSAGE,
-        (NBN_MessageBuilder)GameStateMessage_Create,
-        (NBN_MessageDestructor)GameStateMessage_Destroy,
-        (NBN_MessageSerializer)GameStateMessage_Serialize);
-#endif
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
 
@@ -987,21 +963,79 @@ int main(int argc, char *argv[])
     lights[0] = CreateLight(LIGHT_POINT, (Vector3){ 100, 100, 100 }, Vector3Zero(), WHITE, shader);
     lights[0].position = (Vector3){100.0f, 100.0f, 100.0f};
 
+    pthread_t server_thread;
+    int ev;
+
     while (!WindowShouldClose())
     {
-#ifdef CLIENT_MODE
-        int ev;
-
-        while ((ev = NBN_GameClient_Poll()) != NBN_NO_EVENT)
+        if(IsKeyPressed(KEY_P) && !SERVER_STARTED && !CLIENT_STARTED)
         {
-            if (ev < 0)
+            if(!UDP_DRIVER_REGISTERED)
             {
-                TraceLog(LOG_WARNING, "An occured while polling network events. Exit");
+                #ifdef __EMSCRIPTEN__
+                    NBN_WebRTC_Register(); // Register the WebRTC driver
+                #else
+                    NBN_UDP_Register(); // Register the UDP driver
+                #endif // __EMSCRIPTEN__
+                UDP_DRIVER_REGISTERED = true;
+            }
+            // init server thread
+            pthread_create(&server_thread, NULL, (void*)(serverHandler), NULL);
+        }
 
-                break;
+        if(IsKeyPressed(KEY_O) && !SERVER_STARTED && !CLIENT_STARTED)
+        {
+            // TODO
+            // revisar, esto podría ejecutarse justo mientras se está iniciando el server y se pisarían
+            if(!UDP_DRIVER_REGISTERED)
+            {
+                #ifdef __EMSCRIPTEN__
+                    NBN_WebRTC_Register(); // Register the WebRTC driver
+                #else
+                    NBN_UDP_Register(); // Register the UDP driver
+                #endif // __EMSCRIPTEN__
+                UDP_DRIVER_REGISTERED = true;
+            }
+            // Initialize the client with a protocol name (must be the same than the one used by the server), the server ip address and port
+
+            // Start the client with a protocol name (must be the same than the one used by the server)
+            // the server host and port
+            if (NBN_GameClient_StartEx(PROTOCOL_NAME, "127.0.0.1", PORT, NULL, 0) < 0)
+            {
+                TraceLog(LOG_WARNING, "Game client failed to start. Exit");
+
+                return 1;
             }
 
-            HandleGameClientEvent(ev);
+            CLIENT_STARTED = true;
+
+            // Register messages, have to be done after NBN_GameClient_StartEx
+            // Messages need to be registered on both client and server side
+            NBN_GameClient_RegisterMessage(
+                UPDATE_STATE_MESSAGE,
+                (NBN_MessageBuilder)UpdateStateMessage_Create,
+                (NBN_MessageDestructor)UpdateStateMessage_Destroy,
+                (NBN_MessageSerializer)UpdateStateMessage_Serialize);
+            NBN_GameClient_RegisterMessage(
+                GAME_STATE_MESSAGE,
+                (NBN_MessageBuilder)GameStateMessage_Create,
+                (NBN_MessageDestructor)GameStateMessage_Destroy,
+                (NBN_MessageSerializer)GameStateMessage_Serialize);
+        }
+
+        if(CLIENT_STARTED)
+        {
+            while ((ev = NBN_GameClient_Poll()) != NBN_NO_EVENT)
+            {
+                if (ev < 0)
+                {
+                    TraceLog(LOG_WARNING, "An occured while polling network events. Exit");
+
+                    break;
+                }
+
+                HandleGameClientEvent(ev);
+            }
         }
 
         // helper_cameraFreeMovement();
@@ -1118,36 +1152,38 @@ int main(int argc, char *argv[])
         spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
         spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
-    
-        if (connected && !disconnected)
+        
+        if(CLIENT_STARTED)
         {
-            if(!spawned) break;
-            
-            local_client_state.x = 0;
-            local_client_state.y = 0;
-            local_client_state.z = 0;
-
-            // Send the latest local client state to the server
-            if (SendPositionUpdate() < 0)
+            if (connected && !disconnected)
             {
-                TraceLog(LOG_WARNING, "Failed to send client state update");
+                if(!spawned) break;
+                
+                local_client_state.x = (float)bodies[1].joints[0].position.x; 
+                local_client_state.y = (float)bodies[1].joints[0].position.y;
+                local_client_state.z = (float)bodies[1].joints[0].position.z;
 
-                return -1;
+                
+
+                // Send the latest local client state to the server
+                if (SendPositionUpdate() < 0)
+                {
+                    TraceLog(LOG_WARNING, "Failed to send client state update");
+
+                    return -1;
+                }
+            }
+
+            if (!disconnected)
+            {
+                if (NBN_GameClient_SendPackets() < 0)
+                {
+                    TraceLog(LOG_ERROR, "An occured while flushing the send queue. Exit");
+
+                    break;
+                }
             }
         }
-
-        if (!disconnected)
-        {
-            if (NBN_GameClient_SendPackets() < 0)
-            {
-                TraceLog(LOG_ERROR, "An occured while flushing the send queue. Exit");
-
-                break;
-            }
-        }
-#endif
-
-
 
         BeginDrawing();
             ClearBackground(LIGHTGRAY);
@@ -1161,6 +1197,70 @@ int main(int argc, char *argv[])
                     //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
                     // }
                 EndShaderMode();
+                if(CLIENT_STARTED)
+                {
+                    if (disconnected)
+                    {
+                        if (server_close_code == -1)
+                        {
+                            if (connected)
+                                DrawText("Connection to the server was lost", 265, 280, 20, RED);
+                            else
+                                DrawText("Server cannot be reached", 265, 280, 20, RED);
+                        }
+                        else if (server_close_code == SERVER_FULL_CODE)
+                        {
+                            DrawText("Cannot connect, server is full", 265, 280, 20, RED);
+                        }
+                    }
+                    else if (connected && spawned)
+                    {
+                        // Start by drawing the remote clients
+                        for (int i = 0; i < MAX_CLIENTS - 1; i++)
+                        {
+                            if(other_clients[i])
+                            {
+                                if(other_clients[i]->client_id != local_client_state.client_id)
+                                {
+                                    DrawClient(other_clients[i], false);
+                                    // fprintf(stdout, "id: %d, local id: %d\n", other_clients[i]->client_id, local_client_state.client_id);
+                                }
+                            }
+                        }
+
+                        // Then draw the local client
+                        DrawClient(&local_client_state, true);
+                    }
+                }else if(SERVER_STARTED)
+                {
+                    // ClientState client_states[MAX_CLIENTS];
+                    // unsigned int client_index = 0;
+
+                    // Loop over the clients and build an array of ClientState
+                    for (int i = 0; i < MAX_CLIENTS; i++)
+                    {
+                        // Client *client = clients[i];
+
+                        if (clients[i] == NULL) continue;
+                        
+                        Vector3 position = (Vector3){clients[i]->state.x*SCALE_3D,
+                                                    clients[i]->state.y*SCALE_3D,
+                                                    clients[i]->state.z*SCALE_3D
+                                                };
+                        DrawSphereEx(position,BALL_SIZE*SCALE_3D,10, 10, RED);
+
+                        // client_states[client_index] = (ClientState) {
+                        //         .client_id = client->state.client_id,
+                        //         .x = client->state.x,
+                        //         .y = client->state.y,
+                        //         .z = client->state.z,
+                        // };
+                        // client_index++;
+                    }
+
+                    // Then draw the local client
+                    // DrawClient(&local_client_state, true);
+                }
             EndMode3D();
             DrawFPS(10,10);
         EndDrawing();
@@ -1178,12 +1278,14 @@ int main(int argc, char *argv[])
 //     fprintf(stderr, "[CLIENT] Connection closed\n");
 // #endif
 
-#ifdef SERVER_MODE
-    running = false;
-    // Wait for thread to finish
-    pthread_join(server_thread, NULL);
-    fprintf(stderr, "[SERVER] Server has stopped\n");
-#endif
+
+    if(SERVER_STARTED)
+    {
+        running = false;
+        // Wait for thread to finish
+        pthread_join(server_thread, NULL);
+        fprintf(stderr, "[SERVER] Server has stopped\n");
+    }
 
     return 0;
 }
