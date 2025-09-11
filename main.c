@@ -67,9 +67,9 @@ TPE_Body tpe_bodies[MAX_BODIES];
 TPE_Joint tpe_joints[MAX_JOINTS];
 TPE_Connection tpe_connections[MAX_CONNECTIONS];
 
-TPE_Joint joints[WATER_JOINTS + 1];
+TPE_Joint joints[WATER_JOINTS + 2];
 TPE_Connection connections[WATER_CONNECTIONS];
-TPE_Body bodies[2];
+TPE_Body bodies[3];
 Vector3 spherePos;
 
 TPE_Vec3 helper_heightmapPointLocation(int index)
@@ -850,7 +850,7 @@ void DrawClient(ClientState *state, bool is_local)
 
 int main(int argc, char *argv[])
 {
-    InitWindow(480,480,"findestory");
+    InitWindow(128,128,"findestory");
     SetTargetFPS(FPS);
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
@@ -896,7 +896,15 @@ int main(int argc, char *argv[])
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
-    TPE_worldInit(&tpe_world,bodies,2,environmentDistance);
+    // TPE_worldInit(&tpe_world,bodies,2,environmentDistance);
+
+    // second body test
+    joints[WATER_JOINTS+1] = TPE_joint(TPE_vec3(0,0,ROOM_SIZE / 4),BALL_SIZE);
+    TPE_bodyInit(&bodies[2],joints + WATER_JOINTS + 1,1,connections,0,200);
+
+    bodies[2].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+
+    TPE_worldInit(&tpe_world,bodies,3,environmentDistance);
 
     int i = 0, j = 0, k = 0;
     int filas = HEIGHTMAP_3D_RESOLUTION;
@@ -1221,7 +1229,7 @@ int main(int argc, char *argv[])
                             if(other_clients[i])
                             {
                                 if(other_clients[i]->client_id != local_client_state.client_id)
-                                {
+                                {   
                                     DrawClient(other_clients[i], false);
                                     // fprintf(stdout, "id: %d, local id: %d\n", other_clients[i]->client_id, local_client_state.client_id);
                                 }
@@ -1247,6 +1255,11 @@ int main(int argc, char *argv[])
                                                     clients[i]->state.y*SCALE_3D,
                                                     clients[i]->state.z*SCALE_3D
                                                 };
+
+                        bodies[2].joints[0].position.x = clients[i]->state.x;
+                        bodies[2].joints[0].position.y = clients[i]->state.y;
+                        bodies[2].joints[0].position.z = clients[i]->state.z;
+
                         DrawSphereEx(position,BALL_SIZE*SCALE_3D,10, 10, RED);
 
                         // client_states[client_index] = (ClientState) {
