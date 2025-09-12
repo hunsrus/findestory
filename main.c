@@ -67,9 +67,9 @@ TPE_Body tpe_bodies[MAX_BODIES];
 TPE_Joint tpe_joints[MAX_JOINTS];
 TPE_Connection tpe_connections[MAX_CONNECTIONS];
 
-TPE_Joint joints[WATER_JOINTS + 2];
+TPE_Joint joints[WATER_JOINTS + MAX_BODIES - 1];
 TPE_Connection connections[WATER_CONNECTIONS];
-TPE_Body bodies[3];
+TPE_Body bodies[MAX_BODIES];
 Vector3 spherePos;
 
 TPE_Vec3 helper_heightmapPointLocation(int index)
@@ -697,6 +697,15 @@ static void CreateClient(ClientState state)
     local_client_count++;
 
     TraceLog(LOG_INFO, "New remote client (ID: %d)", client->client_id);
+
+    // generate a physics body for the new client
+    joints[WATER_JOINTS+local_client_count] = TPE_joint(TPE_vec3(client->x,client->y,client->z),BALL_SIZE);
+    TPE_bodyInit(&bodies[local_client_count+1],joints + WATER_JOINTS + local_client_count,1,connections,0,200);
+
+    bodies[local_client_count+1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+
+    // 2 porque cuento el cuerpo del agua y el del cliente local
+    TPE_worldInit(&tpe_world,bodies,2+local_client_count,environmentDistance);
 }
 
 static void UpdateClient(ClientState state)
@@ -921,15 +930,7 @@ int main(int argc, char *argv[])
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
-    // TPE_worldInit(&tpe_world,bodies,2,environmentDistance);
-
-    // second body test
-    joints[WATER_JOINTS+1] = TPE_joint(TPE_vec3(0,0,ROOM_SIZE / 4),BALL_SIZE);
-    TPE_bodyInit(&bodies[2],joints + WATER_JOINTS + 1,1,connections,0,200);
-
-    bodies[2].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
-
-    TPE_worldInit(&tpe_world,bodies,3,environmentDistance);
+    TPE_worldInit(&tpe_world,bodies,2,environmentDistance);
 
     int i = 0, j = 0, k = 0;
     int filas = HEIGHTMAP_3D_RESOLUTION;
@@ -1207,7 +1208,18 @@ int main(int argc, char *argv[])
                 local_client_state.velocity[1] = (float)bodies[1].joints[0].velocity[1];
                 local_client_state.velocity[2] = (float)bodies[1].joints[0].velocity[2];
 
-                
+                for (int i = 0; i < MAX_CLIENTS - 1; i++)
+                {
+                    if(other_clients[i])
+                    {
+                        if(other_clients[i]->client_id != local_client_state.client_id)
+                        {   
+                            bodies[2+i].joints[0].velocity[0] = other_clients[i]->velocity[0];
+                            bodies[2+i].joints[0].velocity[1] = other_clients[i]->velocity[1];
+                            bodies[2+i].joints[0].velocity[2] = other_clients[i]->velocity[2];           
+                        }
+                    }
+                }
 
                 // Send the latest local client state to the server
                 if (SendPositionUpdate() < 0)
@@ -1281,35 +1293,22 @@ int main(int argc, char *argv[])
                     // unsigned int client_index = 0;
 
                     // Loop over the clients and build an array of ClientState
-                    for (int i = 0; i < MAX_CLIENTS; i++)
-                    {
-                        // Client *client = clients[i];
+                    // for (int i = 0; i < MAX_CLIENTS; i++)
+                    // {
 
-                        if (clients[i] == NULL) continue;
-                        
-                        // TPE_bodyApplyGravity(&tpe_world.bodies[2],
-                        //     bodies[2].joints[0].position.y > 0 ? G : (-2 * G));
-                        // TPE_bodyAccelerate(&bodies[2], clients[i]->state.acceleration);
+                        // if (clients[i] == NULL) continue;
 
-                        bodies[2].joints[0].velocity[0] = clients[i]->state.velocity[0];
-                        bodies[2].joints[0].velocity[1] = clients[i]->state.velocity[1];
-                        bodies[2].joints[0].velocity[2] = clients[i]->state.velocity[2];
+                        // bodies[2].joints[0].velocity[0] = clients[i]->state.velocity[0];
+                        // bodies[2].joints[0].velocity[1] = clients[i]->state.velocity[1];
+                        // bodies[2].joints[0].velocity[2] = clients[i]->state.velocity[2];
 
-                        Vector3 position = (Vector3){(float)bodies[2].joints[0].position.x*SCALE_3D,
-                                                    (float)bodies[2].joints[0].position.y*SCALE_3D,
-                                                    (float)bodies[2].joints[0].position.z*SCALE_3D
-                                                };
+                        // Vector3 position = (Vector3){(float)bodies[2].joints[0].position.x*SCALE_3D,
+                        //                             (float)bodies[2].joints[0].position.y*SCALE_3D,
+                        //                             (float)bodies[2].joints[0].position.z*SCALE_3D
+                        //                         };
 
-                        DrawSphereEx(position,BALL_SIZE*SCALE_3D,10, 10, RED);
-
-                        // client_states[client_index] = (ClientState) {
-                        //         .client_id = client->state.client_id,
-                        //         .x = client->state.x,
-                        //         .y = client->state.y,
-                        //         .z = client->state.z,
-                        // };
-                        // client_index++;
-                    }
+                        // DrawSphereEx(position,BALL_SIZE*SCALE_3D,10, 10, RED);
+                    // }
 
                     // Then draw the local client
                     // DrawClient(&local_client_state, true);
