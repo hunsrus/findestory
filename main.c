@@ -1,7 +1,5 @@
 #define RLIGHTS_IMPLEMENTATION      //Importante para que defina las funciones de rlights y eso
 #define PLATFORM_DESKTOP
-#define SERVER_MODE
-#define CLIENT_MODE
 
 #include "tinyphysicsengine.h"
 #include <raylib.h>
@@ -43,6 +41,8 @@ Shader initShader(void)
 // --------------- PHYSICS RELATED ------------------
 
 #define FPS 60
+
+#define ACC ((25 * 30) / FPS )
 
 #define JOINT_SIZE (TPE_F / 4)
 #define BALL_SIZE (5 * TPE_F / 4)
@@ -140,6 +140,7 @@ typedef struct
     TPE_Unit x;
     TPE_Unit y;
     TPE_Unit z;
+    TPE_Unit velocity[3];
 } UpdateStateMessage;
 
 // Client state, represents a client over the network
@@ -149,6 +150,7 @@ typedef struct
     TPE_Unit x;
     TPE_Unit y;
     TPE_Unit z;
+    TPE_Unit velocity[3];
 } ClientState;
 
 typedef struct
@@ -172,6 +174,10 @@ int UpdateStateMessage_Serialize(UpdateStateMessage *msg, NBN_Stream *stream)
     NBN_SerializeInt(stream, msg->x, -ROOM_SIZE/2, ROOM_SIZE/2);
     NBN_SerializeInt(stream, msg->y, -ROOM_SIZE/2, ROOM_SIZE/2);
     NBN_SerializeInt(stream, msg->z, -ROOM_SIZE/2, ROOM_SIZE/2);
+    NBN_SerializeInt(stream, msg->velocity[0], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt(stream, msg->velocity[1], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt(stream, msg->velocity[2], INT16_MIN, INT16_MAX);
+    
 
     return 0;
 }
@@ -196,14 +202,15 @@ int GameStateMessage_Serialize(GameStateMessage *msg, NBN_Stream *stream)
         NBN_SerializeInt(stream, msg->client_states[i].x, -ROOM_SIZE/2, ROOM_SIZE/2);
         NBN_SerializeInt(stream, msg->client_states[i].y, -ROOM_SIZE/2, ROOM_SIZE/2);
         NBN_SerializeInt(stream, msg->client_states[i].z, -ROOM_SIZE/2, ROOM_SIZE/2);
+        NBN_SerializeInt(stream, msg->client_states[i].velocity[0], INT16_MIN, INT16_MAX);
+        NBN_SerializeInt(stream, msg->client_states[i].velocity[1], INT16_MIN, INT16_MAX);
+        NBN_SerializeInt(stream, msg->client_states[i].velocity[2], INT16_MIN, INT16_MAX);
     }
 
     return 0;
 }
 
-// server specific
-
-#ifdef SERVER_MODE
+// --------------- SERVER CLIENT ---------------
 
 // For Sleep function
 #if defined(__EMSCRIPTEN__)
@@ -240,7 +247,7 @@ static Vector3 spawns[] = {
     (Vector3){0, 0, 0}
 };
 
-static void AcceptConnection(TPE_Unit x, TPE_Unit y, TPE_Unit z, NBN_ConnectionHandle conn)
+static void AcceptConnection(TPE_Unit x, TPE_Unit y, TPE_Unit z, TPE_Unit velocity[3], NBN_ConnectionHandle conn)
 {
     NBN_WriteStream ws;
     uint8_t data[32];
@@ -250,6 +257,9 @@ static void AcceptConnection(TPE_Unit x, TPE_Unit y, TPE_Unit z, NBN_ConnectionH
     NBN_SerializeInt((NBN_Stream *)&ws, x, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeInt((NBN_Stream *)&ws, y, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeInt((NBN_Stream *)&ws, z, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt((NBN_Stream *)&ws, velocity[0], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt((NBN_Stream *)&ws, velocity[1], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt((NBN_Stream *)&ws, velocity[2], INT16_MIN, INT16_MAX);
     NBN_SerializeUInt((NBN_Stream *)&ws, conn, 0, UINT_MAX);
 
     // Accept the connection
@@ -277,15 +287,17 @@ static int HandleNewConnection(void)
     client_handle = NBN_GameServer_GetIncomingConnection();
 
     // Get a spawning position for the client
-    Vector3 spawn = spawns[client_handle % MAX_CLIENTS];
+    // Vector3 spawn = spawns[client_handle % MAX_CLIENTS];
 
     // Build some "initial" data that will be sent to the connected client
 
-    TPE_Unit x = spawn.x;
-    TPE_Unit y = spawn.y;
-    TPE_Unit z = spawn.z;
+    TPE_Vec3 spawn_pos = bodies[1].joints[0].position;
+    TPE_Unit spawn_vel[3];
+    spawn_vel[0] = bodies[1].joints[0].velocity[0];
+    spawn_vel[1] = bodies[1].joints[0].velocity[1];
+    spawn_vel[2] = bodies[1].joints[0].velocity[2];
 
-    AcceptConnection(x, y, z, client_handle);
+    AcceptConnection(spawn_pos.x, spawn_pos.y, spawn_pos.z, spawn_vel , client_handle);
 
     TraceLog(LOG_INFO, "Connection accepted (ID: %d)", client_handle);
 
@@ -308,7 +320,7 @@ static int HandleNewConnection(void)
     client->client_handle = client_handle; // Store the nbnet connection ID
 
     // Fill the client state with initial spawning data
-    client->state = (ClientState){.client_id = client_handle, .x = 0, .y = 0, .z = 0};
+    client->state = (ClientState){.client_id = client_handle, .x = spawn_pos.x, .y = spawn_pos.y, .z = spawn_pos.z, .velocity[0] = spawn_vel[0], .velocity[1] = spawn_vel[1], .velocity[2] = spawn_vel[3]};
 
     client_count++;
 
@@ -362,6 +374,9 @@ static void HandleUpdateStateMessage(UpdateStateMessage *msg, Client *sender)
     sender->state.x = msg->x;
     sender->state.y = msg->y;
     sender->state.z = msg->z;
+    sender->state.velocity[0] = msg->velocity[0];
+    sender->state.velocity[1] = msg->velocity[1];
+    sender->state.velocity[2] = msg->velocity[2];
 
     UpdateStateMessage_Destroy(msg);
 }
@@ -427,6 +442,9 @@ static int BroadcastGameState(void)
                 .x = client->state.x,
                 .y = client->state.y,
                 .z = client->state.z,
+                .velocity[0] = client->state.velocity[0],
+                .velocity[1] = client->state.velocity[1],
+                .velocity[2] = client->state.velocity[2],
         };
         client_index++;
     }
@@ -565,11 +583,8 @@ int serverHandler(void* args)
 
     return 0;
 }
-#endif
 
-// client specific
-
-#ifdef CLIENT_MODE
+// --------------- CLIENT SPECIFIC ---------------
 
 static bool connected = false;         // Connected to the server
 static bool disconnected = false;      // Got disconnected from the server
@@ -591,7 +606,7 @@ static unsigned int local_client_count = 0;
 
 static bool CLIENT_STARTED = false;
 
-static void SpawnLocalClient(int x, int y, int z, uint32_t client_id)
+static void SpawnLocalClient(int x, int y, int z, TPE_Unit velocity[3], uint32_t client_id)
 {
     TraceLog(LOG_INFO, "Received spawn message, position: (%d, %d), client id: %d", x, y, client_id);
 
@@ -600,6 +615,9 @@ static void SpawnLocalClient(int x, int y, int z, uint32_t client_id)
     local_client_state.x = x;
     local_client_state.y = y;
     local_client_state.z = z;
+    local_client_state.velocity[0] = velocity[0];
+    local_client_state.velocity[1] = velocity[1];
+    local_client_state.velocity[2] = velocity[2];
 
     spawned = true;
 }
@@ -609,6 +627,7 @@ static void HandleConnection(void)
     uint8_t data[32];
     unsigned int data_len = NBN_GameClient_ReadServerData(data);
     NBN_ReadStream rs;
+    TPE_Unit aux_velocity[3] = { 0 };
 
     NBN_ReadStream_Init(&rs, data, data_len);
 
@@ -620,9 +639,12 @@ static void HandleConnection(void)
     NBN_SerializeInt(((NBN_Stream *)&rs), x, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeInt(((NBN_Stream *)&rs), y, -ROOM_SIZE/2, ROOM_SIZE);
     NBN_SerializeInt(((NBN_Stream *)&rs), z, -ROOM_SIZE/2, ROOM_SIZE);
+    NBN_SerializeInt(((NBN_Stream *)&rs), aux_velocity[0], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt(((NBN_Stream *)&rs), aux_velocity[1], INT16_MIN, INT16_MAX);
+    NBN_SerializeInt(((NBN_Stream *)&rs), aux_velocity[2], INT16_MIN, INT16_MAX);
     NBN_SerializeUInt(((NBN_Stream *)&rs), client_id, 0, UINT_MAX);
 
-    SpawnLocalClient(x, y, z, client_id);
+    SpawnLocalClient(x, y, z, aux_velocity, client_id);
 
     connected = true;
 }
@@ -823,6 +845,9 @@ static int SendPositionUpdate(void)
     msg->x = local_client_state.x;
     msg->y = local_client_state.y;
     msg->z = local_client_state.z;
+    msg->velocity[0] = local_client_state.velocity[0];
+    msg->velocity[1] = local_client_state.velocity[1];
+    msg->velocity[2] = local_client_state.velocity[2];
 
     // Unreliably send it to the server
     if (NBN_GameClient_SendUnreliableMessage(UPDATE_STATE_MESSAGE, msg) < 0)
@@ -844,13 +869,11 @@ void DrawClient(ClientState *state, bool is_local)
     }
 }
 
-#endif
-
 // --------------- MAIN ------------------
 
 int main(int argc, char *argv[])
 {
-    InitWindow(128,128,"findestory");
+    InitWindow(480,480,"findestory");
     SetTargetFPS(FPS);
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
@@ -860,6 +883,8 @@ int main(int argc, char *argv[])
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
+
+    TPE_Vec3 acceleration = { 0 };
 
     // build the water body:
 
@@ -1142,20 +1167,28 @@ int main(int argc, char *argv[])
     #define G ((5 * 30) / FPS)
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
             bodies[1].joints[0].position.y > 0 ? G : (-2 * G));
-
-    #define ACC ((25 * 30) / FPS )
+        
+        acceleration = TPE_vec3(0,0,0);
         if (IsKeyDown(KEY_W))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
+            acceleration.z = ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
         else if (IsKeyDown(KEY_S))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,-1 * ACC));
+            acceleration.z = -ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,-1 * ACC));
         else if (IsKeyDown(KEY_D))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(ACC,0,0));
+            acceleration.x = ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(ACC,0,0));
         else if (IsKeyDown(KEY_A))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(-1 * ACC,0,0));
+            acceleration.x = -ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(-1 * ACC,0,0));
         else if (IsKeyDown(KEY_C))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,ACC,0));
+            acceleration.y = ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,ACC,0));
         else if (IsKeyDown(KEY_X))
-            TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
+            acceleration.y = -ACC;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
+
+        TPE_bodyAccelerate(&bodies[1], acceleration);
 
         spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
@@ -1170,6 +1203,9 @@ int main(int argc, char *argv[])
                 local_client_state.x = (float)bodies[1].joints[0].position.x; 
                 local_client_state.y = (float)bodies[1].joints[0].position.y;
                 local_client_state.z = (float)bodies[1].joints[0].position.z;
+                local_client_state.velocity[0] = (float)bodies[1].joints[0].velocity[0];
+                local_client_state.velocity[1] = (float)bodies[1].joints[0].velocity[1];
+                local_client_state.velocity[2] = (float)bodies[1].joints[0].velocity[2];
 
                 
 
@@ -1251,14 +1287,18 @@ int main(int argc, char *argv[])
 
                         if (clients[i] == NULL) continue;
                         
-                        Vector3 position = (Vector3){clients[i]->state.x*SCALE_3D,
-                                                    clients[i]->state.y*SCALE_3D,
-                                                    clients[i]->state.z*SCALE_3D
-                                                };
+                        // TPE_bodyApplyGravity(&tpe_world.bodies[2],
+                        //     bodies[2].joints[0].position.y > 0 ? G : (-2 * G));
+                        // TPE_bodyAccelerate(&bodies[2], clients[i]->state.acceleration);
 
-                        bodies[2].joints[0].position.x = clients[i]->state.x;
-                        bodies[2].joints[0].position.y = clients[i]->state.y;
-                        bodies[2].joints[0].position.z = clients[i]->state.z;
+                        bodies[2].joints[0].velocity[0] = clients[i]->state.velocity[0];
+                        bodies[2].joints[0].velocity[1] = clients[i]->state.velocity[1];
+                        bodies[2].joints[0].velocity[2] = clients[i]->state.velocity[2];
+
+                        Vector3 position = (Vector3){(float)bodies[2].joints[0].position.x*SCALE_3D,
+                                                    (float)bodies[2].joints[0].position.y*SCALE_3D,
+                                                    (float)bodies[2].joints[0].position.z*SCALE_3D
+                                                };
 
                         DrawSphereEx(position,BALL_SIZE*SCALE_3D,10, 10, RED);
 
@@ -1281,16 +1321,11 @@ int main(int argc, char *argv[])
 
     CloseWindow();
 
-    // TODO
-    // crear una función para cerrar el cliente y el server
-    // que libere los recursos referidos al driver una única vez, porque lo comparten
-
-// #ifdef CLIENT_MODE
-//     NBN_GameClient_Stop();
-//     while(!disconnected){};
-//     fprintf(stderr, "[CLIENT] Connection closed\n");
-// #endif
-
+    if(CLIENT_STARTED)
+    {
+        NBN_GameClient_Stop();
+        fprintf(stderr, "[CLIENT] Connection closed\n");
+    }
 
     if(SERVER_STARTED)
     {
