@@ -7,6 +7,9 @@ set(GRAPHICS GRAPHICS_API_OPENGL_21)
 # set(CMAKE_C_STANDARD 99)
 # set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# para poder descargar raylib en windows (falla por falta de certificados)
+SET(CMAKE_TLS_VERIFY 0)
+
 if (UNIX)
     add_compile_options(-Wall -Wno-unknown-pragmas -Wno-type-limits -std=gnu99)
 endif (UNIX)
@@ -45,7 +48,13 @@ ${SOURCES}
 )
 
 
-target_link_libraries(${PROJECT_NAME} raylib rt pthread m)
+if (UNIX)
+    target_link_libraries(${PROJECT_NAME} raylib rt pthread m)
+endif (UNIX)
+
+if(WIN32)
+  target_link_libraries(${PROJECT_NAME} raylib pthread m)
+endif (WIN32)
 
 # set RAYLIB_INCLUDE_PATH from command line
 target_include_directories(${PROJECT_NAME} PUBLIC "${RAYLIB_INCLUDE_PATH}")
