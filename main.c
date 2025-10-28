@@ -139,12 +139,229 @@ void DrawClient(ClientState *state, bool is_local)
     }
 }
 
+// --------------- WORLD GEN ------------------
+#include "perlin.h"
+
+#define FLT_MAX 340282346638528859811704183484516925440.0f
+// cantidad de chunks de tamaño (en dos direcciones, es decir
+// MAP_WIDTH_CHUNKS se aplica de forma simétrica, si es 4, son
+// 4 chunks para el lado +x y 4 para el lado -x)
+#define MAP_WIDTH_CHUNKS 2
+#define MAP_HEIGHT_CHUNKS 2
+// #define CHUNK_SIZE 64
+// #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
+#define CHUNK_SIZE 4
+#define VIEW_DISTANCE CHUNK_SIZE*2
+
+// estructura para almacenar un chunk de terreno
+typedef struct TerrainChunk {
+    Mesh mesh;
+    Model model;
+    BoundingBox boundingBox;
+    Vector3 position;
+    Vector3 size;
+    Matrix transform;
+} TerrainChunk;
+
+float mapear(float val, float valMin, float valMax, float outMin, float outMax)
+{
+    return (val - valMin)*(outMax-outMin)/(valMax-valMin) + outMin;
+}
+
+void CalculateNormals(TerrainChunk *chunk) {
+    int vertexCount = chunk->mesh.vertexCount;
+    int triangleCount = chunk->mesh.triangleCount;
+    float *vertices = chunk->mesh.vertices;
+    float *normals = chunk->mesh.normals;
+    unsigned short *indices = chunk->mesh.indices;
+
+    // Inicializar todas las normales a (0, 0, 0)
+    for (int i = 0; i < vertexCount * 3; i++) {
+        normals[i] = 0.0f;
+    }
+
+    // Calcular la normal de cada triángulo y sumarla a las normales de sus vértices
+    for (int i = 0; i < triangleCount * 3; i += 3) {
+        int v1 = indices[i];
+        int v2 = indices[i + 1];
+        int v3 = indices[i + 2];
+
+        float v1x = vertices[v1 * 3];
+        float v1y = vertices[v1 * 3 + 1];
+        float v1z = vertices[v1 * 3 + 2];
+
+        float v2x = vertices[v2 * 3];
+        float v2y = vertices[v2 * 3 + 1];
+        float v2z = vertices[v2 * 3 + 2];
+
+        float v3x = vertices[v3 * 3];
+        float v3y = vertices[v3 * 3 + 1];
+        float v3z = vertices[v3 * 3 + 2];
+
+        float edge1x = v2x - v1x;
+        float edge1y = v2y - v1y;
+        float edge1z = v2z - v1z;
+
+        float edge2x = v3x - v1x;
+        float edge2y = v3y - v1y;
+        float edge2z = v3z - v1z;
+
+        float normalx = edge1y * edge2z - edge1z * edge2y;
+        float normaly = edge1z * edge2x - edge1x * edge2z;
+        float normalz = edge1x * edge2y - edge1y * edge2x;
+
+        normals[v1 * 3] += normalx;
+        normals[v1 * 3 + 1] += normaly;
+        normals[v1 * 3 + 2] += normalz;
+
+        normals[v2 * 3] += normalx;
+        normals[v2 * 3 + 1] += normaly;
+        normals[v2 * 3 + 2] += normalz;
+
+        normals[v3 * 3] += normalx;
+        normals[v3 * 3 + 1] += normaly;
+        normals[v3 * 3 + 2] += normalz;
+    }
+
+    // Normalizar las normales
+    for (int i = 0; i < vertexCount; i++) {
+        float normalx = normals[i * 3];
+        float normaly = normals[i * 3 + 1];
+        float normalz = normals[i * 3 + 2];
+
+        float length = sqrtf(normalx * normalx + normaly * normaly + normalz * normalz);
+
+        normals[i * 3] = normalx / length;
+        normals[i * 3 + 1] = normaly / length;
+        normals[i * 3 + 2] = normalz / length;
+    }
+}
+
+// Función para generar un chunk de terreno
+TerrainChunk GenerateTerrainChunk(int width, int height, float scale, Vector3 position) {
+    TerrainChunk chunk;
+    chunk.position = position;
+    chunk.size = (Vector3){ width * scale, scale, height * scale };
+
+    int vertexCount = width * height;
+    int triangleCount = (width - 1) * (height - 1) * 2;
+
+    // Asignar memoria dinámicamente para los arrays
+    chunk.mesh = (Mesh){ 0 };
+    chunk.mesh.vertexCount = vertexCount;
+    chunk.mesh.triangleCount = triangleCount;
+    chunk.mesh.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float)); // 3 floats por vértice (x, y, z)
+    chunk.mesh.normals = (float*)MemAlloc(vertexCount * 3 * sizeof(float));  // 3 floats por normal (x, y, z)
+    chunk.mesh.texcoords = (float*)MemAlloc(vertexCount * 2 * sizeof(float)); // 2 floats por texcoord (u, v)
+    chunk.mesh.indices = (unsigned short*)MemAlloc(triangleCount * 3 * sizeof(unsigned short)); // 3 indices por triángulo
+
+    int vCounter = 0;
+    int nCounter = 0;
+    int tCounter = 0;
+    int iCounter = 0;
+
+    float paso = 0.1f;
+    // unsigned int semilla = 180100;
+    unsigned int semilla = 118;
+
+    for (int z = 0; z < height; z++) {
+        for (int x = 0; x < width; x++) {
+            //float y = 0.0f; // Puedes modificar esta altura para darle forma al terreno
+            float globalZ = position.z+z*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
+            float globalX = position.x+x*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+            // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
+            float y = 1.5f*pnoise2d((double)globalZ*paso*2,(double)globalX*paso*2,(double)2, 1, semilla)+
+                                        1.25f*pnoise2d((double)globalZ*paso*4,(double)globalX*paso*4,(double)2, 1, semilla)+
+                                        0.05f*pnoise2d((double)globalZ*paso*8,(double)globalX*paso*8,(double)2, 1, semilla);
+
+            // Agregar vértices
+            chunk.mesh.vertices[vCounter++] = x * scale;
+            chunk.mesh.vertices[vCounter++] = y;
+            chunk.mesh.vertices[vCounter++] = z * scale;
+
+            // Agregar normales
+            chunk.mesh.normals[nCounter++] = 0.0f;
+            chunk.mesh.normals[nCounter++] = 1.0f;
+            chunk.mesh.normals[nCounter++] = 0.0f;
+
+            // Agregar coordenadas de textura
+            chunk.mesh.texcoords[tCounter++] = (float)x / width;
+            chunk.mesh.texcoords[tCounter++] = (float)z / height;
+
+            // Agregar índices para los triángulos
+            if (x < width - 1 && z < height - 1) {
+                chunk.mesh.indices[iCounter++] = (z * width) + x;
+                chunk.mesh.indices[iCounter++] = ((z + 1) * width) + x;
+                chunk.mesh.indices[iCounter++] = (z * width) + (x + 1);
+
+                chunk.mesh.indices[iCounter++] = (z * width) + (x + 1);
+                chunk.mesh.indices[iCounter++] = ((z + 1) * width) + x;
+                chunk.mesh.indices[iCounter++] = ((z + 1) * width) + (x + 1);
+            }
+        }
+    }
+
+    CalculateNormals(&chunk);
+    // CalculateNormals2(&chunk);
+    // Sube la malla a la GPU
+    UploadMesh(&chunk.mesh, false);
+
+    chunk.model = LoadModelFromMesh(chunk.mesh);
+    chunk.transform = MatrixTranslate(position.x, position.y, position.z);
+    chunk.boundingBox = GetMeshBoundingBox(chunk.mesh);
+    // hay que transformar la posición de la bounding box para detectar correctamente las colisiones
+    chunk.boundingBox.min = Vector3Transform(chunk.boundingBox.min,chunk.transform);
+    chunk.boundingBox.max = Vector3Transform(chunk.boundingBox.max,chunk.transform);
+
+    return chunk;
+}
+
+void RenderTerrainChunk(TerrainChunk chunk, Texture2D texture, Shader shader) {
+    Material material = LoadMaterialDefault();
+    material.maps[MATERIAL_MAP_DIFFUSE].texture = texture;
+    material.shader = shader;
+
+    //Matrix mat = MatrixTranslate(chunk.position.x, chunk.position.y, chunk.position.z);
+    DrawMesh(chunk.mesh, material, chunk.transform);
+    //chunk.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
+    //DrawModel(chunk.model,chunk.position,1.0f,WHITE);
+    //UnloadMaterial(material);
+}
+
+void UnloadTerrainChunk(TerrainChunk chunk) {
+    UnloadMesh(chunk.mesh);
+}
+
+float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
+{
+    return Vector3Length(Vector3Subtract(chunk.position,refPoint));
+}
+
 // --------------- MAIN ------------------
 
 int main(int argc, char *argv[])
 {
     InitWindow(480,480,"findestory");
     SetTargetFPS(FPS);
+
+    // Crear terreno en chunks
+    const float scale = 0.5f;
+    unsigned int TOTAL_CHUNKS = MAP_HEIGHT_CHUNKS*2*MAP_WIDTH_CHUNKS*2;
+    unsigned int chunkID = 0;
+    TerrainChunk *terrainChunks = (TerrainChunk *)RL_MALLOC(TOTAL_CHUNKS*sizeof(TerrainChunk));
+    for (int z = -MAP_HEIGHT_CHUNKS; z < MAP_HEIGHT_CHUNKS; z++) {
+        for (int x = -MAP_WIDTH_CHUNKS; x < MAP_WIDTH_CHUNKS; x++) {
+            Vector3 position = { x * (CHUNK_SIZE-1) * scale, 0, z * (CHUNK_SIZE-1) * scale};
+
+            TerrainChunk chunk = GenerateTerrainChunk(CHUNK_SIZE, CHUNK_SIZE, scale, position);
+            
+            terrainChunks[chunkID] = chunk;
+            chunkID++;
+        }
+    }
+
+    // Texture2D terrainTexture = LoadTextureFromImage(LoadImage("src/img/favicon.png"));
+    Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
 
@@ -507,6 +724,11 @@ int main(int argc, char *argv[])
             BeginMode3D(camera);
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
                 BeginShaderMode(shader);
+                    for(chunkID = 0; chunkID < TOTAL_CHUNKS; chunkID++)
+                    {
+                        // if(dist2Chunk(terrainChunks[chunkID], jugador.pos) < VIEW_DISTANCE)
+                            RenderTerrainChunk(terrainChunks[chunkID], terrainTexture, shader);
+                    }
                     DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
                     // {
@@ -555,6 +777,12 @@ int main(int argc, char *argv[])
     }
 
     CloseWindow();
+
+    UnloadTexture(terrainTexture);
+    for(chunkID = 0; chunkID < TOTAL_CHUNKS; chunkID++)
+    {
+        UnloadTerrainChunk(terrainChunks[chunkID]);
+    }
 
     if(CLIENT_STARTED)
     {
