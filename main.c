@@ -316,11 +316,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     return chunk;
 }
 
-void RenderTerrainChunk(TerrainChunk chunk, Texture2D texture, Shader shader) {
-    Material material = LoadMaterialDefault();
-    material.maps[MATERIAL_MAP_DIFFUSE].texture = texture;
-    material.shader = shader;
-
+void RenderTerrainChunk(TerrainChunk chunk, Material material, Shader shader) {
     //Matrix mat = MatrixTranslate(chunk.position.x, chunk.position.y, chunk.position.z);
     DrawMesh(chunk.mesh, material, chunk.transform);
     //chunk.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
@@ -344,6 +340,8 @@ int main(int argc, char *argv[])
     InitWindow(480,480,"findestory");
     SetTargetFPS(FPS);
 
+    Shader shader = initShader();
+
     // Crear terreno en chunks
     const float scale = 0.5f;
     unsigned int TOTAL_CHUNKS = MAP_HEIGHT_CHUNKS*2*MAP_WIDTH_CHUNKS*2;
@@ -362,6 +360,10 @@ int main(int argc, char *argv[])
 
     // Texture2D terrainTexture = LoadTextureFromImage(LoadImage("src/img/favicon.png"));
     Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
+
+    Material material = LoadMaterialDefault();
+    material.maps[MATERIAL_MAP_DIFFUSE].texture = terrainTexture;
+    material.shader = shader;
 
     TPE_worldInit(&tpe_world,tpe_bodies,0,0);
 
@@ -464,7 +466,6 @@ int main(int argc, char *argv[])
     
     UploadMesh(&mesh, true);    
 
-    Shader shader = initShader();
     Matrix meshTransform = MatrixIdentity();
     Material meshMaterial = LoadMaterialDefault();
     // meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
@@ -727,7 +728,7 @@ int main(int argc, char *argv[])
                     for(chunkID = 0; chunkID < TOTAL_CHUNKS; chunkID++)
                     {
                         // if(dist2Chunk(terrainChunks[chunkID], jugador.pos) < VIEW_DISTANCE)
-                            RenderTerrainChunk(terrainChunks[chunkID], terrainTexture, shader);
+                            RenderTerrainChunk(terrainChunks[chunkID], material, shader);
                     }
                     DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
