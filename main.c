@@ -168,17 +168,18 @@ float mapear(float val, float valMin, float valMax, float outMin, float outMax)
     return (val - valMin)*(outMax-outMin)/(valMax-valMin) + outMin;
 }
 
-void CalculateNormals(TerrainChunk *chunk) {
-    int vertexCount = chunk->mesh.vertexCount;
-    int triangleCount = chunk->mesh.triangleCount;
-    float *vertices = chunk->mesh.vertices;
-    float *normals = chunk->mesh.normals;
-    unsigned short *indices = chunk->mesh.indices;
+void CalculateNormals(Mesh* mesh, Mesh* chunkMesh) {
+    int vertexCount = mesh->vertexCount;
+    int triangleCount = mesh->triangleCount;
+    float *vertices = mesh->vertices;
+    float *normals = mesh->normals;
+    unsigned short *indices = mesh->indices;
 
     // Inicializar todas las normales a (0, 0, 0)
     // for (int i = 0; i < vertexCount * 3; i++) {
     //     normals[i] = 0.0f;
     // }
+    int size = sqrt(mesh->vertexCount)-2;
 
     // Calcular la normal de cada triángulo y sumarla a las normales de sus vértices
     for (int i = 0; i < triangleCount * 3; i += 3) {
@@ -235,10 +236,44 @@ void CalculateNormals(TerrainChunk *chunk) {
         normals[i * 3 + 1] = normaly / length;
         normals[i * 3 + 2] = normalz / length;
     }
+
+    int nCounter = 0;
+    int nCounterAux = 0;
+    int auxSize = size+2;
+
+    for (int z = 0; z < auxSize; z++) {
+        for (int x = 0; x < auxSize; x++) {
+            if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
+            {
+                chunkMesh->normals[nCounter++] = normals[nCounterAux++];
+                chunkMesh->normals[nCounter++] = normals[nCounterAux++];
+                chunkMesh->normals[nCounter++] = normals[nCounterAux++];
+            }else{
+                nCounterAux+=3;
+            }  
+        }
+    }
 }
 
 // Función para generar un chunk de terreno
 TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
+    Mesh auxMesh;
+    int auxSize = size+2;
+    int auxVertexCount = auxSize * auxSize;
+    int auxTriangleCount = (auxSize - 1) * (auxSize - 1) * 2;
+    auxMesh = (Mesh){ 0 };
+    auxMesh.vertexCount = auxVertexCount;
+    auxMesh.triangleCount = auxTriangleCount;
+    auxMesh.vertices = (float*)MemAlloc(auxVertexCount * 3 * sizeof(float));
+    auxMesh.normals = (float*)MemAlloc(auxVertexCount * 3 * sizeof(float));
+    auxMesh.texcoords = (float*)MemAlloc(auxVertexCount * 2 * sizeof(float));
+    auxMesh.indices = (unsigned short*)MemAlloc(auxTriangleCount * 3 * sizeof(unsigned short));
+
+    int vCounterAux = 0;
+    int nCounterAux = 0;
+    int tCounterAux = 0;
+    int iCounterAux = 0;
+
     TerrainChunk chunk;
     chunk.position = position;
     chunk.size = (Vector3){ size * scale, scale, size * scale };
@@ -264,8 +299,8 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     // unsigned int semilla = 180100;
     unsigned int semilla = 118;
 
-    for (int z = 0; z < size; z++) {
-        for (int x = 0; x < size; x++) {
+    for (int z = 0; z < auxSize; z++) {
+        for (int x = 0; x < auxSize; x++) {
             //float y = 0.0f; // Puedes modificar esta altura para darle forma al terreno
             float globalZ = position.z+z*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
             float globalX = position.x+x*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
@@ -273,35 +308,59 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
             float y = 1.5f*pnoise2d((double)globalZ*paso*2,(double)globalX*paso*2,(double)2, 1, semilla)+
                                         1.25f*pnoise2d((double)globalZ*paso*4,(double)globalX*paso*4,(double)2, 1, semilla)+
                                         0.05f*pnoise2d((double)globalZ*paso*8,(double)globalX*paso*8,(double)2, 1, semilla);
+            int xcoord = x-1;
+            int zcoord = z-1;
+            if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
+            {
+                // fprintf(stdout, "[DEBUG] nCounterAux: %d", nCounterAux);
+                // Agregar vértices
+                // [TODO] X e Y siempre son iguales, no hace falta recalcular para cada chunk. optimizar.
+                chunk.mesh.vertices[vCounter++] = xcoord * scale;
+                chunk.mesh.vertices[vCounter++] = y;
+                chunk.mesh.vertices[vCounter++] = zcoord * scale;
 
-            // Agregar vértices
-            chunk.mesh.vertices[vCounter++] = x * scale;
-            chunk.mesh.vertices[vCounter++] = y;
-            chunk.mesh.vertices[vCounter++] = z * scale;
+                // Agregar normales
+                chunk.mesh.normals[nCounter++] = 0.0f;
+                chunk.mesh.normals[nCounter++] = 0.0f;
+                chunk.mesh.normals[nCounter++] = 0.0f;
 
-            // Agregar normales
-            chunk.mesh.normals[nCounter++] = 0.0f;
-            chunk.mesh.normals[nCounter++] = 0.0f;
-            chunk.mesh.normals[nCounter++] = 0.0f;
+                // Agregar coordenadas de textura
+                chunk.mesh.texcoords[tCounter++] = (float)xcoord / size;
+                chunk.mesh.texcoords[tCounter++] = (float)zcoord / size;
+                // Agregar índices para los triángulos
+                if (x < auxSize-2 && z < auxSize-2) {
+                    chunk.mesh.indices[iCounter++] = (zcoord * size) + xcoord;
+                    chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + xcoord;
+                    chunk.mesh.indices[iCounter++] = (zcoord * size) + (xcoord + 1);
 
-            // Agregar coordenadas de textura
-            chunk.mesh.texcoords[tCounter++] = (float)x / size;
-            chunk.mesh.texcoords[tCounter++] = (float)z / size;
-
-            // Agregar índices para los triángulos
-            if (x < size - 1 && z < size - 1) {
-                chunk.mesh.indices[iCounter++] = (z * size) + x;
-                chunk.mesh.indices[iCounter++] = ((z + 1) * size) + x;
-                chunk.mesh.indices[iCounter++] = (z * size) + (x + 1);
-
-                chunk.mesh.indices[iCounter++] = (z * size) + (x + 1);
-                chunk.mesh.indices[iCounter++] = ((z + 1) * size) + x;
-                chunk.mesh.indices[iCounter++] = ((z + 1) * size) + (x + 1);
+                    chunk.mesh.indices[iCounter++] = (zcoord * size) + (xcoord + 1);
+                    chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + xcoord;
+                    chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + (xcoord + 1);
+                }
             }
+
+            auxMesh.vertices[vCounterAux++] = x * scale;
+            auxMesh.vertices[vCounterAux++] = y;
+            auxMesh.vertices[vCounterAux++] = z * scale;
+
+            auxMesh.normals[nCounterAux++] = 0.0f;
+            auxMesh.normals[nCounterAux++] = 0.0f;
+            auxMesh.normals[nCounterAux++] = 0.0f;
+
+            if (x < auxSize - 1 && z < auxSize - 1) {
+                auxMesh.indices[iCounterAux++] = (z * auxSize) + x;
+                auxMesh.indices[iCounterAux++] = ((z + 1) * auxSize) + x;
+                auxMesh.indices[iCounterAux++] = (z * auxSize) + (x + 1);
+
+                auxMesh.indices[iCounterAux++] = (z * auxSize) + (x + 1);
+                auxMesh.indices[iCounterAux++] = ((z + 1) * auxSize) + x;
+                auxMesh.indices[iCounterAux++] = ((z + 1) * auxSize) + (x + 1);
+            }
+        
         }
     }
 
-    CalculateNormals(&chunk);
+    CalculateNormals(&auxMesh, &chunk.mesh);
 
     // Sube la malla a la GPU
     UploadMesh(&chunk.mesh, false);
