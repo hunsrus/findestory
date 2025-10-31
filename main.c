@@ -301,15 +301,17 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
 
     for (int z = 0; z < auxSize; z++) {
         for (int x = 0; x < auxSize; x++) {
+            int xcoord = x-1;
+            int zcoord = z-1;
+
             //float y = 0.0f; // Puedes modificar esta altura para darle forma al terreno
-            float globalZ = position.z+z*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
-            float globalX = position.x+x*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+            float globalZ = position.z+zcoord*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
+            float globalX = position.x+xcoord*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
             // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
             float y = 1.5f*pnoise2d((double)globalZ*paso*2,(double)globalX*paso*2,(double)2, 1, semilla)+
                                         1.25f*pnoise2d((double)globalZ*paso*4,(double)globalX*paso*4,(double)2, 1, semilla)+
                                         0.05f*pnoise2d((double)globalZ*paso*8,(double)globalX*paso*8,(double)2, 1, semilla);
-            int xcoord = x-1;
-            int zcoord = z-1;
+
             if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
             {
                 // fprintf(stdout, "[DEBUG] nCounterAux: %d", nCounterAux);
@@ -392,11 +394,41 @@ float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
     return Vector3Length(Vector3Subtract(chunk.position,refPoint));
 }
 
+TPE_Unit height(int32_t x, int32_t y)
+{
+    float scale = 1.0f;
+    // x = (int32_t)(x*scale*SCALE_3D);
+    // int32_t z = (int32_t)(y*scale*SCALE_3D);
+
+    int zcoord = y+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
+    int xcoord = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+
+    // fprintf(stdout,"[DEBUG] x: %d\n",x);
+
+    float paso = 0.1f;
+    // unsigned int semilla = 180100;
+    unsigned int semilla = 118;
+
+    // float globalZ = z*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
+    // float globalX = +x*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+    // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
+    float height = 1.5f*pnoise2d((double)zcoord*paso*2,(double)xcoord*paso*2,(double)2, 1, semilla)+
+                                1.25f*pnoise2d((double)zcoord*paso*4,(double)xcoord*paso*4,(double)2, 1, semilla)+
+                                0.05f*pnoise2d((double)zcoord*paso*8,(double)xcoord*paso*8,(double)2, 1, semilla);
+
+    return (TPE_Unit)(height/SCALE_3D);    
+}
+
+TPE_Vec3 heightmapEnvironmentDistance(TPE_Vec3 p, TPE_Unit maxD)
+{
+  return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),height,maxD);
+}
+
 // --------------- MAIN ------------------
 
 int main(int argc, char *argv[])
 {
-    InitWindow(480,480,"findestory");
+    InitWindow(128,128,"findestory");
     SetTargetFPS(FPS);
 
     Shader shader = initShader();
@@ -424,7 +456,7 @@ int main(int argc, char *argv[])
     material.maps[MATERIAL_MAP_DIFFUSE].texture = terrainTexture;
     material.shader = shader;
 
-    TPE_worldInit(&tpe_world,tpe_bodies,0,0);
+    TPE_worldInit(&tpe_world,tpe_bodies,0,heightmapEnvironmentDistance);
 
     camera.position = (Vector3){10.0f, 10.0f, 10.0f};
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
@@ -464,12 +496,12 @@ int main(int argc, char *argv[])
     bodies[0].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
     // create the ball body:
-    joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,0,ROOM_SIZE / 4),BALL_SIZE);
+    joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
     TPE_bodyInit(&bodies[1],joints + WATER_JOINTS,1,connections,0,200);
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
-    TPE_worldInit(&tpe_world,bodies,2,environmentDistance);
+    TPE_worldInit(&tpe_world,bodies,2,heightmapEnvironmentDistance);
 
     int i = 0, j = 0, k = 0;
     int filas = HEIGHTMAP_3D_RESOLUTION;
