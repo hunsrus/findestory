@@ -156,12 +156,13 @@ void DrawClient(ClientState *state, bool is_local)
 // estructura para almacenar un chunk de terreno
 typedef struct TerrainChunk {
     Mesh mesh;
-    Model model;
-    BoundingBox boundingBox;
+    TPE_Unit **height;
     Vector3 position;
     Vector3 size;
     Matrix transform;
 } TerrainChunk;
+
+TerrainChunk **terrainChunks;
 
 float mapear(float val, float valMin, float valMax, float outMin, float outMax)
 {
@@ -277,6 +278,11 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     TerrainChunk chunk;
     chunk.position = position;
     chunk.size = (Vector3){ size * scale, scale, size * scale };
+    chunk.height = MemAlloc(CHUNK_SIZE*sizeof(TPE_Unit *));
+    for(int i = 0; i < CHUNK_SIZE; i++)
+    {
+        chunk.height[i] = MemAlloc(CHUNK_SIZE*sizeof(TPE_Unit));
+    }
 
     int vertexCount = size * size;
     int triangleCount = (size - 1) * (size - 1) * 2;
@@ -304,7 +310,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
             int xcoord = x-1;
             int zcoord = z-1;
 
-            //float y = 0.0f; // Puedes modificar esta altura para darle forma al terreno
+            //float y = 0.0f;
             float globalZ = position.z+zcoord*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
             float globalX = position.x+xcoord*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
             // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
@@ -339,6 +345,9 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
                     chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + xcoord;
                     chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + (xcoord + 1);
                 }
+
+                // altura en unidades útiles para el motor de físicas
+                chunk.height[zcoord][xcoord] = (TPE_Unit)(y/SCALE_3D);
             }
 
             auxMesh.vertices[vCounterAux++] = x * scale;
@@ -367,12 +376,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     // Sube la malla a la GPU
     UploadMesh(&chunk.mesh, false);
 
-    chunk.model = LoadModelFromMesh(chunk.mesh);
     chunk.transform = MatrixTranslate(position.x, position.y, position.z);
-    chunk.boundingBox = GetMeshBoundingBox(chunk.mesh);
-    // hay que transformar la posición de la bounding box para detectar correctamente las colisiones
-    chunk.boundingBox.min = Vector3Transform(chunk.boundingBox.min,chunk.transform);
-    chunk.boundingBox.max = Vector3Transform(chunk.boundingBox.max,chunk.transform);
 
     return chunk;
 }
@@ -394,24 +398,19 @@ float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
     return Vector3Length(Vector3Subtract(chunk.position,refPoint));
 }
 
+static bool TRIGGER_PRINTF = false;
+
 TPE_Unit height(int32_t x, int32_t y)
 {
     float scale = 1.0f;
-    // x = (int32_t)(x*scale*SCALE_3D);
-    // int32_t z = (int32_t)(y*scale*SCALE_3D);
 
     int zcoord = y+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
     int xcoord = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
-
-    // fprintf(stdout,"[DEBUG] x: %d\n",x);
 
     float paso = 0.1f;
     // unsigned int semilla = 180100;
     unsigned int semilla = 118;
 
-    // float globalZ = z*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
-    // float globalX = +x*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
-    // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
     float height = 1.5f*pnoise2d((double)zcoord*paso*2,(double)xcoord*paso*2,(double)2, 1, semilla)+
                                 1.25f*pnoise2d((double)zcoord*paso*4,(double)xcoord*paso*4,(double)2, 1, semilla)+
                                 0.05f*pnoise2d((double)zcoord*paso*8,(double)xcoord*paso*8,(double)2, 1, semilla);
@@ -435,17 +434,21 @@ int main(int argc, char *argv[])
 
     // Crear terreno en chunks
     const float scale = 0.5f;
-    unsigned int TOTAL_CHUNKS = MAP_HEIGHT_CHUNKS*2*MAP_WIDTH_CHUNKS*2;
-    unsigned int chunkID = 0;
-    TerrainChunk *terrainChunks = (TerrainChunk *)RL_MALLOC(TOTAL_CHUNKS*sizeof(TerrainChunk));
+    // [TODO] cambiar la forma de representar la cantidad de chunks simétrica porque es un asco
+    terrainChunks = (TerrainChunk **)RL_MALLOC(MAP_WIDTH_CHUNKS*2*sizeof(TerrainChunk *));
+    for(int i = 0; i < MAP_WIDTH_CHUNKS*2; i++)
+    {
+        terrainChunks[i] = (TerrainChunk *)RL_MALLOC(MAP_HEIGHT_CHUNKS*2*sizeof(TerrainChunk));
+    }
     for (int z = -MAP_HEIGHT_CHUNKS; z < MAP_HEIGHT_CHUNKS; z++) {
         for (int x = -MAP_WIDTH_CHUNKS; x < MAP_WIDTH_CHUNKS; x++) {
+            int xindex = x+MAP_WIDTH_CHUNKS;
+            int zindex = z+MAP_HEIGHT_CHUNKS;
             Vector3 position = { x * (CHUNK_SIZE-1) * scale, 0, z * (CHUNK_SIZE-1) * scale};
 
             TerrainChunk chunk = GenerateTerrainChunk(CHUNK_SIZE, scale, position);
             
-            terrainChunks[chunkID] = chunk;
-            chunkID++;
+            terrainChunks[xindex][zindex] = chunk;
         }
     }
 
@@ -572,6 +575,8 @@ int main(int argc, char *argv[])
 
     while (!WindowShouldClose())
     {
+        if(IsKeyPressed(KEY_T)) TRIGGER_PRINTF = true;
+
         if(IsKeyPressed(KEY_P) && !SERVER_STARTED && !CLIENT_STARTED)
         {
             if(!UDP_DRIVER_REGISTERED)
@@ -764,6 +769,16 @@ int main(int argc, char *argv[])
         spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
         spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
+
+        if(TRIGGER_PRINTF)
+        {
+            fprintf(stdout,"[DEBUG] x_pos_d: %d\n",bodies[1].joints[0].position.x);
+            fprintf(stdout,"[DEBUG] y_pos_d: %d\n",bodies[1].joints[0].position.y);
+            fprintf(stdout,"[DEBUG] z_pos_d: %d\n",bodies[1].joints[0].position.z);
+            fprintf(stdout,"[DEBUG] x_pos_f: %f\n",spherePos.x);
+            fprintf(stdout,"[DEBUG] y_pos_f: %f\n",spherePos.y);
+            fprintf(stdout,"[DEBUG] z_pos_f: %f\n",spherePos.z);
+        }        
         
         if(CLIENT_STARTED)
         {
@@ -811,15 +826,18 @@ int main(int argc, char *argv[])
             }
         }
 
+        TRIGGER_PRINTF = false;
+
         BeginDrawing();
             ClearBackground(LIGHTGRAY);
             BeginMode3D(camera);
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
                 BeginShaderMode(shader);
-                    for(chunkID = 0; chunkID < TOTAL_CHUNKS; chunkID++)
+                    for (int zindex = 0; zindex < MAP_HEIGHT_CHUNKS*2; zindex++)
                     {
-                        // if(dist2Chunk(terrainChunks[chunkID], jugador.pos) < VIEW_DISTANCE)
-                            RenderTerrainChunk(terrainChunks[chunkID], material, shader);
+                        for (int xindex = 0; xindex < MAP_WIDTH_CHUNKS*2; xindex++)
+                        {
+                            RenderTerrainChunk(terrainChunks[xindex][zindex], material, shader);
                     }
                     DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
@@ -871,9 +889,10 @@ int main(int argc, char *argv[])
     CloseWindow();
 
     UnloadTexture(terrainTexture);
-    for(chunkID = 0; chunkID < TOTAL_CHUNKS; chunkID++)
-    {
-        UnloadTerrainChunk(terrainChunks[chunkID]);
+    for (int z = 0; z < MAP_HEIGHT_CHUNKS*2; z++) {
+        for (int x = 0; x < MAP_WIDTH_CHUNKS*2; x++) {
+            UnloadTerrainChunk(terrainChunks[x][z]);
+        }
     }
 
     if(CLIENT_STARTED)
