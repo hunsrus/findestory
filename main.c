@@ -301,7 +301,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     int tCounter = 0;
     int iCounter = 0;
 
-    float paso = 0.1f;
+    float paso = 0.05f;
     // unsigned int semilla = 180100;
     unsigned int semilla = 118;
 
@@ -601,6 +601,9 @@ int main(int argc, char *argv[])
     camera.fovy = 80.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
+    Vector3 ortoTangente = Vector3Zero();
+    Vector3 tangente = Vector3Zero();
+
     // build the water body:
 
     for (int i = 0; i < HEIGHTMAP_3D_POINTS; ++i)
@@ -638,7 +641,7 @@ int main(int argc, char *argv[])
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
     bodies[1].flags |= TPE_BODY_FLAG_NONROTATING;
 
-    bodies[1].friction = 512;
+    bodies[1].friction = 400;
     bodies[1].elasticity = 0;
 
     player.body = &bodies[1];
@@ -889,7 +892,7 @@ int main(int argc, char *argv[])
 
         TPE_worldStep(&tpe_world);
 
-    #define G ((5 * 30) / FPS)
+    #define G ((8 * 30) / FPS)
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
             bodies[1].joints[0].position.y > 0 ? G : (-2 * G));
         
@@ -900,11 +903,11 @@ int main(int argc, char *argv[])
         // fprintf(stdout, "[DEBUG] vertical distance: \t%f\n", ((float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D)-(float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
 
         // fprintf(stdout, "[DEBUG] body position \tx:%d\ty%d\tz:%d\n", bodies[1].joints[0].position.x,bodies[1].joints[0].position.y,bodies[1].joints[0].position.z);
-        // if(abs((bodies[1].joints[0].position.y) - (height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*10)
+        if(abs((bodies[1].joints[0].position.y) - (storedHeight(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*2)
         {
             ON_TERRAIN = true;
             
-        }//else ON_TERRAIN = false;
+        }else ON_TERRAIN = false;
 
         if(bodies[1].joints[0].position.y < BALL_SIZE*2)
         {
@@ -912,32 +915,36 @@ int main(int argc, char *argv[])
         }else ON_WATER = false;
 
         TPE_Unit acceleration;
-        if(ON_WATER) acceleration = ACC/2;
-        if(ON_TERRAIN) acceleration = ACC;
+        // if(ON_WATER) acceleration = ACC/2;
+        // if(ON_TERRAIN) acceleration = ACC;
+        if(IsKeyDown(KEY_LEFT_SHIFT))
+        {
+            if(ON_WATER) acceleration = 3;
+            if(ON_TERRAIN) acceleration = 3;
+        }else
+        {
+            if(ON_WATER) acceleration = 1;
+            if(ON_TERRAIN) acceleration = 1;
+        }
+
 
         if(ON_TERRAIN || ON_WATER)
         {
             if (IsKeyDown(KEY_W))
-            player.acceleration.z = -acceleration;
+            // player.acceleration.z = -acceleration;
+            player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*5,tangente.y*5,tangente.z*5},acceleration));
             // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
-            else if (IsKeyDown(KEY_S))
-                player.acceleration.z = acceleration;
-                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,-1 * ACC));
-            else if (IsKeyDown(KEY_D))
-                player.acceleration.x = acceleration;
-                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(ACC,0,0));
-            else if (IsKeyDown(KEY_A))
-                player.acceleration.x = -acceleration;
-                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(-1 * ACC,0,0));
-            else if (IsKeyDown(KEY_C))
-                player.acceleration.y = acceleration*2;
-                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,ACC,0));
-            else if (IsKeyDown(KEY_X))
-                player.acceleration.y = -acceleration*2;
-                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
+            if (IsKeyDown(KEY_S))
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*10,tangente.y*10,tangente.z*10},-acceleration));
+            if (IsKeyDown(KEY_D))
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},-acceleration));
+            if (IsKeyDown(KEY_A))
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},acceleration));
+            if (IsKeyDown(KEY_SPACE))
+                player.acceleration.y = acceleration*10;
+            if (IsKeyDown(KEY_LEFT_CONTROL))
+                player.acceleration.y = -acceleration*10;
         }
-
-        
 
         TPE_bodyAccelerate(player.body, player.acceleration);
 
@@ -945,15 +952,69 @@ int main(int argc, char *argv[])
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
         spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
 
+        player.position = spherePos;
+
+        Vector3 p0 = player.position;
+        Vector3 p1 = player.position;
+        Vector3 p2 = player.position;
+        Vector3 p3 = player.position;
+        Vector3 p4 = player.position;
+        Vector3 p5 = player.position;
+        Vector3 p6 = player.position;
+        Vector3 p7 = player.position;
+        Vector3 p8 = player.position;
+        p0.y = (float)storedHeight((TPE_Unit)(player.position.x),(TPE_Unit)(player.position.z))*SCALE_3D;
+        p1.x -= 1;
+        p1.y = (float)storedHeight((TPE_Unit)p1.x,(TPE_Unit)p1.z)*SCALE_3D;
+        p2.x += 1;
+        p2.y = (float)storedHeight((TPE_Unit)p2.x,(TPE_Unit)p2.z)*SCALE_3D;
+        p3.z -= 1;
+        p3.y = (float)storedHeight((TPE_Unit)p3.x,(TPE_Unit)p3.z)*SCALE_3D;
+        p4.x += 1;
+        p4.y = (float)storedHeight((TPE_Unit)p4.x,(TPE_Unit)p4.z)*SCALE_3D;
+        p5.x -= 1;
+        p5.z -= 1;
+        p5.y = (float)storedHeight((TPE_Unit)p5.x,(TPE_Unit)p5.z)*SCALE_3D;
+        p6.x -= 1;
+        p6.z += 1;
+        p6.y = (float)storedHeight((TPE_Unit)p6.x,(TPE_Unit)p6.z)*SCALE_3D;
+        p7.x += 1;
+        p7.z += 1;
+        p7.y = (float)storedHeight((TPE_Unit)p7.x,(TPE_Unit)p7.z)*SCALE_3D;
+        p8.x += 1;
+        p8.z -= 1;
+        p8.y = (float)storedHeight((TPE_Unit)p8.x,(TPE_Unit)p8.z)*SCALE_3D;
+
+        Vector3 v1 = Vector3Subtract(p1,p0);
+        Vector3 v2 = Vector3Subtract(p2,p0);
+        Vector3 v3 = Vector3Subtract(p3,p0);
+        Vector3 v4 = Vector3Subtract(p4,p0);
+        Vector3 v5 = Vector3Subtract(p5,p0);
+        Vector3 v6 = Vector3Subtract(p6,p0);
+        Vector3 v7 = Vector3Subtract(p7,p0);
+        Vector3 v8 = Vector3Subtract(p8,p0);
+
+        Vector3 cruz1 = Vector3CrossProduct(v1,v2);
+        Vector3 cruz2 = Vector3CrossProduct(v2,v3);
+        Vector3 cruz3 = Vector3CrossProduct(v3,v4);
+        Vector3 cruz4 = Vector3CrossProduct(v4,v5);
+        Vector3 cruz5 = Vector3CrossProduct(v5,v6);
+        Vector3 cruz6 = Vector3CrossProduct(v6,v7);
+        Vector3 cruz7 = Vector3CrossProduct(v7,v8);
+        Vector3 cruz8 = Vector3CrossProduct(v8,v1);
+
+        Vector3 hitNormal = Vector3Scale(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(cruz1,cruz2),cruz3),cruz4),cruz5),cruz6),cruz7),cruz8),1.0f/8.0f);
+        hitNormal = Vector3Normalize(hitNormal);
+
         if(CAMERA_MODE == FIRST_PERSON)
         {
             camaraOrientarMouse(WINDOW_WIDTH, WINDOW_HEIGHT, &player);
 
-            // Vector3 ortoTangente = Vector3CrossProduct(nearestHit.normal, player.view);
-            // Vector3 tangente = Vector3CrossProduct(nearestHit.normal, ortoTangente);
-            // tangente = Vector3Scale(tangente,Vector3DotProduct(player.view,tangente)/pow(Vector3Length(tangente),2));
-
-            player.position = spherePos;
+            ortoTangente = Vector3CrossProduct(hitNormal, player.view);
+            tangente = Vector3CrossProduct(hitNormal, ortoTangente);
+            tangente = Vector3Scale(tangente,Vector3DotProduct(player.view,tangente)/pow(Vector3Length(tangente),2));
+            tangente = Vector3Normalize(tangente);
+            ortoTangente = Vector3Normalize(ortoTangente);
             
             player.target = Vector3Add(player.view, player.position);
             
@@ -1047,31 +1108,9 @@ int main(int argc, char *argv[])
                     //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
                     // }
                 EndShaderMode();
-                // DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},BLUE);
-                
-                //for(int xChunk = 0; xChunk < MAP_WIDTH_CHUNKS*2; xChunk++)
-                {
-                    //for(int zChunk = 0; zChunk < MAP_HEIGHT_CHUNKS*2; zChunk++)
-                    {
-                        for(int z = 0; z < CHUNK_SIZE; z++)
-                        {
-                            for(int x = 0; x < CHUNK_SIZE; x++)
-                            {
-                                float zaux = (float)z/2.0f;
-                                float xaux = (float)x/2.0f;
+                DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},BLUE);
 
-                                int xChunk = floor((float)x/CHUNK_SIZE*1.0f)+MAP_WIDTH_CHUNKS;
-                                int zChunk = floor((float)z/CHUNK_SIZE*1.0f)+MAP_HEIGHT_CHUNKS;
-
-                                int xcoord = (x+MAP_WIDTH_CHUNKS*CHUNK_SIZE)%CHUNK_SIZE;
-                                int zcoord = (z+MAP_HEIGHT_CHUNKS*CHUNK_SIZE)%CHUNK_SIZE;
-
-                                if((xcoord < CHUNK_SIZE) && (zcoord < CHUNK_SIZE))
-                                    DrawSphereEx((Vector3){terrainChunks[xChunk][zChunk].position.x+x,terrainChunks[xChunk][zChunk].height[xcoord][zcoord]*SCALE_3D,terrainChunks[xChunk][zChunk].position.z+z},0.2f,10,10,GREEN);
-                            }
-                        }
-                    }
-                }
+                DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(hitNormal,2.0f)),ORANGE);
                 if(CLIENT_STARTED)
                 {
                     if (disconnected)
@@ -1110,10 +1149,12 @@ int main(int argc, char *argv[])
             EndMode3D();
             DrawFPS(10,10);
 
-            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",spherePos.x,spherePos.y,spherePos.z), 10, 30, 20, RED);
-            DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 60, 20, RED);
-            DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 90, 20, RED);
-            DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 120, 20, RED);
+            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",spherePos.x,spherePos.y,spherePos.z), 10, 20+10, 20, RED);
+            DrawText(TextFormat("PHY: %d\t%d\t%d",(TPE_Unit)spherePos.x,storedHeight((TPE_Unit)spherePos.x,(TPE_Unit)spherePos.z),(TPE_Unit)spherePos.z), 10, 20*2+10, 20, RED);
+            DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 20*3+10, 20, RED);
+            DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
+            DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
+            DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
         EndDrawing();
     }
 
