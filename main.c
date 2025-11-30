@@ -146,8 +146,8 @@ void DrawClient(ClientState *state, bool is_local)
 // cantidad de chunks de tamaño (en dos direcciones, es decir
 // MAP_WIDTH_CHUNKS se aplica de forma simétrica, si es 4, son
 // 4 chunks para el lado +x y 4 para el lado -x)
-#define MAP_WIDTH_CHUNKS 1
-#define MAP_HEIGHT_CHUNKS 1
+#define MAP_WIDTH_CHUNKS 2
+#define MAP_HEIGHT_CHUNKS 2
 // #define CHUNK_SIZE 64
 #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
 // #define CHUNK_SIZE 4
@@ -314,11 +314,12 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
             float globalZ = position.z+zcoord*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
             float globalX = position.x+xcoord*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
             // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
-            float y = 1.5f*pnoise2d((double)globalZ*paso*2,(double)globalX*paso*2,(double)2, 1, semilla)+
-                                        1.25f*pnoise2d((double)globalZ*paso*4,(double)globalX*paso*4,(double)2, 1, semilla)+
-                                        0.05f*pnoise2d((double)globalZ*paso*8,(double)globalX*paso*8,(double)2, 1, semilla);
+            float y = 1.5f*pnoise2d((double)globalX*paso*2,(double)globalZ*paso*2,(double)2, 1, semilla)+
+                                        1.25f*pnoise2d((double)globalX*paso*4,(double)globalZ*paso*4,(double)2, 1, semilla)+
+                                        0.05f*pnoise2d((double)globalX*paso*8,(double)globalZ*paso*8,(double)2, 1, semilla);
 
-            if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
+            // if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
+            if(xcoord >= 0 && xcoord < size && zcoord >= 0 && zcoord < size)
             {
                 // fprintf(stdout, "[DEBUG] nCounterAux: %d", nCounterAux);
                 // Agregar vértices
@@ -347,7 +348,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
                 }
 
                 // altura en unidades útiles para el motor de físicas
-                chunk.height[zcoord][xcoord] = (TPE_Unit)(y/SCALE_3D);
+                chunk.height[xcoord][zcoord] = (TPE_Unit)(y/SCALE_3D);
             }
 
             auxMesh.vertices[vCounterAux++] = x * scale;
@@ -400,10 +401,86 @@ float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
 
 static bool TRIGGER_PRINTF = false;
 
+static int ENV_X;
+static int ENV_Y;
+static int ENV_Z;
+static int ENV_X_AUX;
+static int ENV_Y_AUX;
+static int ENV_Z_AUX;
+static int ENV_X_CHU;
+static int ENV_Z_CHU;
+static int ENV_X_PER;
+static int ENV_Y_PER;
+static int ENV_Z_PER;
+
+// TPE_Unit storedHeight(int32_t x, int32_t y)
+// {
+//     int zaux = y+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+//     int xaux = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+//     xaux = floor(mapear(xaux,(float)CHUNK_SIZE+(float)CHUNK_SIZE*0.5f,(MAP_WIDTH_CHUNKS*2-1)*CHUNK_SIZE+1,0,MAP_WIDTH_CHUNKS*2.0f*CHUNK_SIZE));
+//     zaux = floor(mapear(zaux,(float)CHUNK_SIZE+(float)CHUNK_SIZE*0.5f,(MAP_HEIGHT_CHUNKS*2-1)*CHUNK_SIZE+1,0,MAP_HEIGHT_CHUNKS*2.0f*CHUNK_SIZE));
+
+//     // int xChunk = (int)floor(xaux/((MAP_HEIGHT_CHUNKS*CHUNK_SIZE))-2);
+//     // int zChunk = (int)floor(zaux/((MAP_HEIGHT_CHUNKS*CHUNK_SIZE))-2);
+//     int xChunk = floor(mapear(xaux,0,MAP_HEIGHT_CHUNKS*2.0f*CHUNK_SIZE+1,0,MAP_HEIGHT_CHUNKS*2));
+//     int zChunk = floor(mapear(zaux,0,MAP_WIDTH_CHUNKS*2.0f*CHUNK_SIZE+1,0,MAP_WIDTH_CHUNKS*2));
+
+//     int xcoord = ((int)xaux-1)%CHUNK_SIZE;
+//     int zcoord = ((int)zaux-1)%CHUNK_SIZE;
+
+//     ENV_X = x;
+//     ENV_Y = 0;
+//     ENV_Z = y;
+//     ENV_X_CHU = xChunk;
+//     ENV_Z_CHU = zChunk;
+//     ENV_X_AUX = xcoord;
+//     ENV_Y_AUX = 0;
+//     ENV_Z_AUX = zcoord;
+
+//     if((xcoord < CHUNK_SIZE) && (zcoord < CHUNK_SIZE) && (xChunk < MAP_WIDTH_CHUNKS*2) && (zChunk < MAP_HEIGHT_CHUNKS*2) && (xcoord >= 0) && (zcoord >= 0) && (xChunk >= 0) && (zChunk >= 0))
+//     {
+//         ENV_Y = (TPE_Unit)terrainChunks[zChunk][xChunk].height[zcoord][xcoord];
+//         return (TPE_Unit)terrainChunks[zChunk][xChunk].height[zcoord][xcoord];
+//     } else
+//     {
+//         return 0;
+//     }
+// }
+
+TPE_Unit storedHeight(int32_t x, int32_t y)
+{
+    int zaux = y+MAP_WIDTH_CHUNKS*(CHUNK_SIZE-1);
+    int xaux = x+MAP_HEIGHT_CHUNKS*(CHUNK_SIZE-1);
+
+    int xChunk = floor((float)x/(CHUNK_SIZE-1)*1.0f)+MAP_WIDTH_CHUNKS;
+    int zChunk = floor((float)y/(CHUNK_SIZE-1)*1.0f)+MAP_HEIGHT_CHUNKS;
+
+    int xcoord = (x+MAP_WIDTH_CHUNKS*(CHUNK_SIZE-1))%(CHUNK_SIZE-1);
+    int zcoord = (y+MAP_HEIGHT_CHUNKS*(CHUNK_SIZE-1))%(CHUNK_SIZE-1);
+
+    ENV_X = x;
+    ENV_Y = 0;
+    ENV_Z = y;
+    ENV_X_CHU = xChunk;
+    ENV_Z_CHU = zChunk;
+    ENV_X_AUX = xcoord;
+    ENV_Y_AUX = 0;
+    ENV_Z_AUX = zcoord;
+
+    if((xcoord < CHUNK_SIZE) && (zcoord < CHUNK_SIZE) && (xChunk < MAP_WIDTH_CHUNKS*2) && (zChunk < MAP_HEIGHT_CHUNKS*2) && (xcoord >= 0) && (zcoord >= 0) && (xChunk >= 0) && (zChunk >= 0))
+    {
+        ENV_Y = (TPE_Unit)terrainChunks[xChunk][zChunk].height[xcoord][zcoord];
+        return (TPE_Unit)terrainChunks[xChunk][zChunk].height[xcoord][zcoord];
+    } else
+    {
+        return 0;
+    }
+}
+
 TPE_Unit height(int32_t x, int32_t y)
 {
     float scale = 1.0f;
-
+    
     int zcoord = y+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
     int xcoord = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
 
@@ -411,29 +488,86 @@ TPE_Unit height(int32_t x, int32_t y)
     // unsigned int semilla = 180100;
     unsigned int semilla = 118;
 
-    float height = 1.5f*pnoise2d((double)zcoord*paso*2,(double)xcoord*paso*2,(double)2, 1, semilla)+
-                                1.25f*pnoise2d((double)zcoord*paso*4,(double)xcoord*paso*4,(double)2, 1, semilla)+
-                                0.05f*pnoise2d((double)zcoord*paso*8,(double)xcoord*paso*8,(double)2, 1, semilla);
+    float height = 1.5f*pnoise2d((double)xcoord*paso*2,(double)zcoord*paso*2,(double)2, 1, semilla)+
+                                1.25f*pnoise2d((double)xcoord*paso*4,(double)zcoord*paso*4,(double)2, 1, semilla)+
+                                0.05f*pnoise2d((double)xcoord*paso*8,(double)zcoord*paso*8,(double)2, 1, semilla);
 
-    return (TPE_Unit)(height/SCALE_3D);    
+    ENV_X_PER = xcoord;
+    ENV_Y_PER = (TPE_Unit)(height/SCALE_3D);
+    ENV_Z_PER = zcoord;
+
+    storedHeight(x,y);
+
+    return (TPE_Unit)(height/SCALE_3D);
 }
+
 
 TPE_Vec3 heightmapEnvironmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 {
-  return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),height,maxD);
+//   return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),height,maxD);
+  return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),storedHeight,maxD);
+}
+
+// --------------- UTILIDADES ------------------
+
+static int CAMERA_MODE = 0;
+
+enum CAMERA_MODES {FIRST_PERSON = 0, STATIC, THIRD_PERSON, LAST_ELEMENT};
+
+static bool ON_TERRAIN = false;
+static bool ON_WATER = false;
+
+typedef struct{
+    TPE_Body *body;
+    Vector3 position;
+    Vector3 view;
+    Vector3 target;
+    Vector3 up;
+    Vector3 velocity;
+    TPE_Vec3 acceleration;
+}Player;
+
+void camaraOrientarMouse(int pantallaAncho, int pantallaAlto, Player *jugador)
+{
+    float sensibilidad = 0.01f, anguloMax = PI*0.8f, anguloMin = PI-PI*0.8f;
+    static float anguloY;
+    Vector2 mousePos = {GetMouseX(),GetMouseY()}, pantallaCentro = {pantallaAncho/2, pantallaAlto/2}, mouseDireccion;
+    Vector3 eje;
+    Quaternion quatVista = {jugador->view.x,jugador->view.y,jugador->view.z,0.0f}, giro = {0};
+    
+    if((mousePos.x == pantallaCentro.x) && (mousePos.y == pantallaCentro.y)) return;
+    
+    SetMousePosition(pantallaCentro.x,pantallaCentro.y);
+    mouseDireccion.x = (pantallaCentro.x - mousePos.x)*sensibilidad;
+    mouseDireccion.y = (pantallaCentro.y - mousePos.y)*sensibilidad;
+    
+    eje = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(jugador->target, jugador->position), jugador->up));
+    //Orienta eje x
+    giro = QuaternionFromAxisAngle(jugador->up, mouseDireccion.x);
+    quatVista = QuaternionMultiply(QuaternionMultiply(giro,quatVista),QuaternionInvert(giro));
+    jugador->view = (Vector3){quatVista.x, quatVista.y, quatVista.z};
+    //Orienta eje y
+    giro = QuaternionFromAxisAngle(eje, mouseDireccion.y);
+    quatVista = QuaternionMultiply(QuaternionMultiply(giro,quatVista),QuaternionInvert(giro));
+    anguloY = acos(Vector3DotProduct((Vector3){quatVista.x,quatVista.y,quatVista.z}, jugador->up)/Vector3Length((Vector3){quatVista.x,quatVista.y,quatVista.z})*Vector3Length(jugador->up));
+    //Antes de asignar el giro en el eje y chequea los limites
+    if((anguloY > anguloMax) || (anguloY < anguloMin)) return;
+    jugador->view = (Vector3){quatVista.x, quatVista.y, quatVista.z};
 }
 
 // --------------- MAIN ------------------
 
 int main(int argc, char *argv[])
 {
-    InitWindow(128,128,"findestory");
+    int WINDOW_WIDTH = 480;
+    int WINDOW_HEIGHT = 480;
+    InitWindow(WINDOW_WIDTH,WINDOW_HEIGHT,"findestory");
     SetTargetFPS(FPS);
 
     Shader shader = initShader();
 
     // Crear terreno en chunks
-    const float scale = 0.5f;
+    const float scale = 1.0f;
     // [TODO] cambiar la forma de representar la cantidad de chunks simétrica porque es un asco
     terrainChunks = (TerrainChunk **)RL_MALLOC(MAP_WIDTH_CHUNKS*2*sizeof(TerrainChunk *));
     for(int i = 0; i < MAP_WIDTH_CHUNKS*2; i++)
@@ -464,10 +598,8 @@ int main(int argc, char *argv[])
     camera.position = (Vector3){10.0f, 10.0f, 10.0f};
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
-    camera.fovy = 45.0f;
+    camera.fovy = 80.0f;
     camera.projection = CAMERA_PERSPECTIVE;
-
-    TPE_Vec3 acceleration = { 0 };
 
     // build the water body:
 
@@ -498,14 +630,25 @@ int main(int argc, char *argv[])
     bodies[0].flags |= TPE_BODY_FLAG_SOFT;
     bodies[0].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
-    // create the ball body:
+    // create the player
+    Player player = {0};
     joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
-    TPE_bodyInit(&bodies[1],joints + WATER_JOINTS,1,connections,0,200);
+    TPE_bodyInit(&bodies[1],joints + WATER_JOINTS,1,connections,0,1);
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+    bodies[1].flags |= TPE_BODY_FLAG_NONROTATING;
 
+    bodies[1].friction = 512;
+    bodies[1].elasticity = 0;
+
+    player.body = &bodies[1];
+    player.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+    player.view = (Vector3){ 1.0f, 1.0f, 1.0f };
+
+    // update physics word
     TPE_worldInit(&tpe_world,bodies,2,heightmapEnvironmentDistance);
-
+    
+    // generate water mesh
     int i = 0, j = 0, k = 0;
     int filas = HEIGHTMAP_3D_RESOLUTION;
     int columnas = HEIGHTMAP_3D_RESOLUTION;
@@ -577,6 +720,12 @@ int main(int argc, char *argv[])
     {
         if(IsKeyPressed(KEY_T)) TRIGGER_PRINTF = true;
 
+        if(IsKeyPressed(KEY_V))
+        {
+            if(CAMERA_MODE < LAST_ELEMENT) CAMERA_MODE++;
+            else CAMERA_MODE = 0;
+        }
+
         if(IsKeyPressed(KEY_P) && !SERVER_STARTED && !CLIENT_STARTED)
         {
             if(!UDP_DRIVER_REGISTERED)
@@ -647,8 +796,8 @@ int main(int argc, char *argv[])
             }
         }
 
-        // helper_cameraFreeMovement();
-        UpdateCamera(&camera, CAMERA_ORBITAL);
+        // UpdateCamera(&camera, CAMERA_ORBITAL);
+        UpdateCamera(&camera, CAMERA_CUSTOM);
 
         SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position.x, SHADER_UNIFORM_VEC3);
         UpdateLightValues(shader, lights[0]);
@@ -744,31 +893,81 @@ int main(int argc, char *argv[])
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
             bodies[1].joints[0].position.y > 0 ? G : (-2 * G));
         
-        acceleration = TPE_vec3(0,0,0);
-        if (IsKeyDown(KEY_W))
-            acceleration.z = ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
-        else if (IsKeyDown(KEY_S))
-            acceleration.z = -ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,-1 * ACC));
-        else if (IsKeyDown(KEY_D))
-            acceleration.x = ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(ACC,0,0));
-        else if (IsKeyDown(KEY_A))
-            acceleration.x = -ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(-1 * ACC,0,0));
-        else if (IsKeyDown(KEY_C))
-            acceleration.y = ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,ACC,0));
-        else if (IsKeyDown(KEY_X))
-            acceleration.y = -ACC;
-            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
+        player.acceleration = TPE_vec3(0,0,0);
+        
+        // fprintf(stdout, "[DEBUG] terrain height: \t%f - ", (float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
+        // fprintf(stdout, "body Y position: \t%f\n", (float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D);
+        // fprintf(stdout, "[DEBUG] vertical distance: \t%f\n", ((float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D)-(float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
 
-        TPE_bodyAccelerate(&bodies[1], acceleration);
+        // fprintf(stdout, "[DEBUG] body position \tx:%d\ty%d\tz:%d\n", bodies[1].joints[0].position.x,bodies[1].joints[0].position.y,bodies[1].joints[0].position.z);
+        // if(abs((bodies[1].joints[0].position.y) - (height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*10)
+        {
+            ON_TERRAIN = true;
+            
+        }//else ON_TERRAIN = false;
+
+        if(bodies[1].joints[0].position.y < BALL_SIZE*2)
+        {
+            ON_WATER = true;
+        }else ON_WATER = false;
+
+        TPE_Unit acceleration;
+        if(ON_WATER) acceleration = ACC/2;
+        if(ON_TERRAIN) acceleration = ACC;
+
+        if(ON_TERRAIN || ON_WATER)
+        {
+            if (IsKeyDown(KEY_W))
+            player.acceleration.z = -acceleration;
+            // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
+            else if (IsKeyDown(KEY_S))
+                player.acceleration.z = acceleration;
+                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,-1 * ACC));
+            else if (IsKeyDown(KEY_D))
+                player.acceleration.x = acceleration;
+                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(ACC,0,0));
+            else if (IsKeyDown(KEY_A))
+                player.acceleration.x = -acceleration;
+                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(-1 * ACC,0,0));
+            else if (IsKeyDown(KEY_C))
+                player.acceleration.y = acceleration*2;
+                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,ACC,0));
+            else if (IsKeyDown(KEY_X))
+                player.acceleration.y = -acceleration*2;
+                // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,-1 * ACC,0));
+        }
+
+        
+
+        TPE_bodyAccelerate(player.body, player.acceleration);
 
         spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
         spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
+
+        if(CAMERA_MODE == FIRST_PERSON)
+        {
+            camaraOrientarMouse(WINDOW_WIDTH, WINDOW_HEIGHT, &player);
+
+            // Vector3 ortoTangente = Vector3CrossProduct(nearestHit.normal, player.view);
+            // Vector3 tangente = Vector3CrossProduct(nearestHit.normal, ortoTangente);
+            // tangente = Vector3Scale(tangente,Vector3DotProduct(player.view,tangente)/pow(Vector3Length(tangente),2));
+
+            player.position = spherePos;
+            
+            player.target = Vector3Add(player.view, player.position);
+            
+            camera.up = player.up;
+            camera.target = player.target;
+            camera.position = player.position;
+        }else if(CAMERA_MODE == STATIC)
+        {
+            camera.position = (Vector3){10.0f, 10.0f, 10.0f};
+            camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+            camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+            camera.fovy = 80.0f;
+            camera.projection = CAMERA_PERSPECTIVE;
+        }
 
         if(TRIGGER_PRINTF)
         {
@@ -838,14 +1037,41 @@ int main(int argc, char *argv[])
                         for (int xindex = 0; xindex < MAP_WIDTH_CHUNKS*2; xindex++)
                         {
                             RenderTerrainChunk(terrainChunks[xindex][zindex], material, shader);
+                        }
                     }
-                    DrawMesh(mesh, meshMaterial, meshTransform);
+                    // dibujar agua
+                    // DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
                     // {
                     //     Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
                     //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
                     // }
                 EndShaderMode();
+                // DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},BLUE);
+                
+                //for(int xChunk = 0; xChunk < MAP_WIDTH_CHUNKS*2; xChunk++)
+                {
+                    //for(int zChunk = 0; zChunk < MAP_HEIGHT_CHUNKS*2; zChunk++)
+                    {
+                        for(int z = 0; z < CHUNK_SIZE; z++)
+                        {
+                            for(int x = 0; x < CHUNK_SIZE; x++)
+                            {
+                                float zaux = (float)z/2.0f;
+                                float xaux = (float)x/2.0f;
+
+                                int xChunk = floor((float)x/CHUNK_SIZE*1.0f)+MAP_WIDTH_CHUNKS;
+                                int zChunk = floor((float)z/CHUNK_SIZE*1.0f)+MAP_HEIGHT_CHUNKS;
+
+                                int xcoord = (x+MAP_WIDTH_CHUNKS*CHUNK_SIZE)%CHUNK_SIZE;
+                                int zcoord = (z+MAP_HEIGHT_CHUNKS*CHUNK_SIZE)%CHUNK_SIZE;
+
+                                if((xcoord < CHUNK_SIZE) && (zcoord < CHUNK_SIZE))
+                                    DrawSphereEx((Vector3){terrainChunks[xChunk][zChunk].position.x+x,terrainChunks[xChunk][zChunk].height[xcoord][zcoord]*SCALE_3D,terrainChunks[xChunk][zChunk].position.z+z},0.2f,10,10,GREEN);
+                            }
+                        }
+                    }
+                }
                 if(CLIENT_STARTED)
                 {
                     if (disconnected)
@@ -883,6 +1109,11 @@ int main(int argc, char *argv[])
                 }
             EndMode3D();
             DrawFPS(10,10);
+
+            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",spherePos.x,spherePos.y,spherePos.z), 10, 30, 20, RED);
+            DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 60, 20, RED);
+            DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 90, 20, RED);
+            DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 120, 20, RED);
         EndDrawing();
     }
 
