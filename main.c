@@ -146,8 +146,8 @@ void DrawClient(ClientState *state, bool is_local)
 // cantidad de chunks de tamaño (en dos direcciones, es decir
 // MAP_WIDTH_CHUNKS se aplica de forma simétrica, si es 4, son
 // 4 chunks para el lado +x y 4 para el lado -x)
-#define MAP_WIDTH_CHUNKS 10
-#define MAP_HEIGHT_CHUNKS 10
+#define MAP_WIDTH_CHUNKS 20
+#define MAP_HEIGHT_CHUNKS 20
 // #define CHUNK_SIZE 64
 #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
 // #define CHUNK_SIZE 4
@@ -262,6 +262,8 @@ void CalculateNormals(Mesh* mesh, Mesh* chunkMesh) {
     }
 }
 
+#define OFFSETCOLOR 10
+
 // Función para generar un chunk de terreno
 TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     Mesh auxMesh;
@@ -320,7 +322,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     ladoMenor = ladoMenor*2*CHUNK_SIZE;
     float marginW = MAP_WIDTH_CHUNKS*2*CHUNK_SIZE/5.0f;
     float marginH = MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE/5.0f;
-    int alturaMax = 30;
+    int maxHeight = 30;
 
     float picos[cantPicos][4]; //[0] = X; [1] = Y; [2] = Radio; [3] = Peso
 
@@ -332,7 +334,19 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
         picos[i][0] = ((rand()%(int)(MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE-(marginH+picos[i][2])*2+1))+marginH+picos[i][2]);
     }
 
-    Image textureImage = GenImageChecked(CHUNK_SIZE-1,CHUNK_SIZE-1,1,1,BLACK,MAGENTA);;
+    Image textureImage = GenImageChecked(CHUNK_SIZE-1,CHUNK_SIZE-1,1,1,BLACK,MAGENTA);
+
+    Color color[6];
+    float rangoColor[3];
+    int k;
+    color[0] = (Color){245, 245, 86, 255};
+    color[1] = (Color){173, 240, 65, 255};
+    color[2] = (Color){93, 190, 35, 255};
+    color[3] = (Color){201, 117, 61, 255};
+
+    rangoColor[0] = mapear(0.3f,0.0f,1.0f,-6.0f,maxHeight/2.0f);
+    rangoColor[1] = mapear(0.6f,0.0f,1.0f,-6.0f,maxHeight/2.0f);
+    rangoColor[2] = mapear(0.9f,0.0f,1.0f,-6.0f,maxHeight/2.0f);
 
     for (int z = 0; z < auxSize; z++) {
         for (int x = 0; x < auxSize; x++) {
@@ -347,8 +361,8 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
             for(int k = 0; k < cantPicos; k++)
             {
                 float dist = distPuntos(picos[k][0],picos[k][1],0,(float)globalX,(float)globalZ,0);
-                float val = mapear(dist,0.0f,picos[k][2]*2.0f,alturaMax*picos[k][3],0.0f);
-                if((val > y))    //Los números en i/CHUNK_SIZE son truncados al ser casteados como enteros
+                float val = mapear(dist,0.0f,picos[k][2]*2.0f,(float)maxHeight*picos[k][3],0.0f);
+                if((val > y))
                 {
                     y = (val+y)/2.0f;
                 }
@@ -364,9 +378,16 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
                                         0.25f*pnoise2d((double)globalX*paso*8,(double)globalZ*paso*8,(double)2, 1, semilla)+
                                         0.05f*pnoise2d((double)globalX*paso*16,(double)globalZ*paso*16,(double)2, 1, semilla);
 
+            if(y <= rangoColor[0]) k = 0;
+            else if(y <= rangoColor[1]) k = 1;
+            else if(y <= rangoColor[2]) k = 2;
+            else k = 3;
+
+
             // if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
             if(xcoord >= 0 && xcoord < size && zcoord >= 0 && zcoord < size)
             {
+                ImageDrawPixel(&textureImage, xcoord, zcoord, (Color){rand()%((color[k].r+OFFSETCOLOR)-(color[k].r-OFFSETCOLOR)+1)+(color[k].r-OFFSETCOLOR),rand()%((color[k].g+OFFSETCOLOR)-(color[k].g-OFFSETCOLOR)+1)+(color[k].g-OFFSETCOLOR),rand()%((color[k].b+OFFSETCOLOR)-(color[k].b-OFFSETCOLOR)+1)+(color[k].b-OFFSETCOLOR),255});
                 // fprintf(stdout, "[DEBUG] nCounterAux: %d", nCounterAux);
                 // Agregar vértices
                 // [TODO] X e Y siempre son iguales, no hace falta recalcular para cada chunk. optimizar.
@@ -380,8 +401,8 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
                 chunk.mesh.normals[nCounter++] = 0.0f;
 
                 // Agregar coordenadas de textura
-                chunk.mesh.texcoords[tCounter++] = (float)xcoord / size;
-                chunk.mesh.texcoords[tCounter++] = (float)zcoord / size;
+                chunk.mesh.texcoords[tCounter++] = (float)xcoord / (size-1);
+                chunk.mesh.texcoords[tCounter++] = (float)zcoord / (size-1);
                 // Agregar índices para los triángulos
                 if (x < auxSize-2 && z < auxSize-2) {
                     chunk.mesh.indices[iCounter++] = (zcoord * size) + xcoord;
@@ -424,6 +445,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     UploadMesh(&chunk.mesh, false);
 
     chunk.transform = MatrixTranslate(position.x, position.y, position.z);
+
     chunk.texture = LoadTextureFromImage(textureImage);
 
     return chunk;
@@ -1046,10 +1068,10 @@ int main(int argc, char *argv[])
             tangente = Vector3Normalize(tangente);
             ortoTangente = Vector3Normalize(ortoTangente);
 
-            camera.position = (Vector3){50.0f, 50.0f, 50.0f};
-            camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+            camera.position = (Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE, MAP_WIDTH_CHUNKS*CHUNK_SIZE, MAP_HEIGHT_CHUNKS*CHUNK_SIZE};
+            camera.target = (Vector3){ 0.0f, -MAP_WIDTH_CHUNKS*CHUNK_SIZE/2, 0.0f };
             camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
-            camera.fovy = 80.0f;
+            camera.fovy = 50.0f;
             camera.projection = CAMERA_PERSPECTIVE;
         }else if(CAMERA_MODE == THIRD_PERSON)
         {
