@@ -146,12 +146,12 @@ void DrawClient(ClientState *state, bool is_local)
 // cantidad de chunks de tamaño (en dos direcciones, es decir
 // MAP_WIDTH_CHUNKS se aplica de forma simétrica, si es 4, son
 // 4 chunks para el lado +x y 4 para el lado -x)
-#define MAP_WIDTH_CHUNKS 2
-#define MAP_HEIGHT_CHUNKS 2
+#define MAP_WIDTH_CHUNKS 10
+#define MAP_HEIGHT_CHUNKS 10
 // #define CHUNK_SIZE 64
 #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
 // #define CHUNK_SIZE 4
-#define VIEW_DISTANCE CHUNK_SIZE*2
+#define VIEW_DISTANCE CHUNK_SIZE*40
 
 // estructura para almacenar un chunk de terreno
 typedef struct TerrainChunk {
@@ -160,6 +160,7 @@ typedef struct TerrainChunk {
     Vector3 position;
     Vector3 size;
     Matrix transform;
+    Texture2D texture;
 } TerrainChunk;
 
 TerrainChunk **terrainChunks;
@@ -167,6 +168,11 @@ TerrainChunk **terrainChunks;
 float mapear(float val, float valMin, float valMax, float outMin, float outMax)
 {
     return (val - valMin)*(outMax-outMin)/(valMax-valMin) + outMin;
+}
+
+float distPuntos(float x1, float y1, float z1, float x2, float y2, float z2)
+{
+    return sqrtf((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2) + (z1 - z2)*(z1 - z2));
 }
 
 void CalculateNormals(Mesh* mesh, Mesh* chunkMesh) {
@@ -301,22 +307,62 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     int tCounter = 0;
     int iCounter = 0;
 
-    float paso = 0.05f;
+    float paso = 0.08f;
     // unsigned int semilla = 180100;
-    unsigned int semilla = 118;
+    // unsigned int semilla = 118;
+    unsigned int semilla = 1000;
+    srand(semilla);
+
+    int ladoMenor = (MAP_WIDTH_CHUNKS > MAP_HEIGHT_CHUNKS)? MAP_HEIGHT_CHUNKS:MAP_WIDTH_CHUNKS;
+    // int cantPicos = ladoMenor/2;
+    int cantPicos = 6;
+
+    ladoMenor = ladoMenor*2*CHUNK_SIZE;
+    float marginW = MAP_WIDTH_CHUNKS*2*CHUNK_SIZE/5.0f;
+    float marginH = MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE/5.0f;
+    int alturaMax = 30;
+
+    float picos[cantPicos][4]; //[0] = X; [1] = Y; [2] = Radio; [3] = Peso
+
+    for(int i = 0; i < cantPicos; i++)
+    {
+        picos[i][3] = ((rand()%(int)(10-0+1)))/10.0f;
+        picos[i][2] = ((rand()%(int)(ladoMenor/7-ladoMenor/20+1))+ladoMenor/20);
+        picos[i][1] = ((rand()%(int)(MAP_WIDTH_CHUNKS*2*CHUNK_SIZE-(marginW+picos[i][2])*2+1))+marginW+picos[i][2]);
+        picos[i][0] = ((rand()%(int)(MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE-(marginH+picos[i][2])*2+1))+marginH+picos[i][2]);
+    }
+
+    Image textureImage = GenImageChecked(CHUNK_SIZE-1,CHUNK_SIZE-1,1,1,BLACK,MAGENTA);;
 
     for (int z = 0; z < auxSize; z++) {
         for (int x = 0; x < auxSize; x++) {
+            float y = -6.0f;
             int xcoord = x-1;
             int zcoord = z-1;
 
             //float y = 0.0f;
             float globalZ = position.z+zcoord*scale+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
             float globalX = position.x+xcoord*scale+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
+
+            for(int k = 0; k < cantPicos; k++)
+            {
+                float dist = distPuntos(picos[k][0],picos[k][1],0,(float)globalX,(float)globalZ,0);
+                float val = mapear(dist,0.0f,picos[k][2]*2.0f,alturaMax*picos[k][3],0.0f);
+                if((val > y))    //Los números en i/CHUNK_SIZE son truncados al ser casteados como enteros
+                {
+                    y = (val+y)/2.0f;
+                }
+            }
             // float y = pnoise2d((double)globalZ*paso,(double)globalX*paso,(double)2, 1, semilla);
-            float y = 1.5f*pnoise2d((double)globalX*paso*2,(double)globalZ*paso*2,(double)2, 1, semilla)+
-                                        1.25f*pnoise2d((double)globalX*paso*4,(double)globalZ*paso*4,(double)2, 1, semilla)+
-                                        0.05f*pnoise2d((double)globalX*paso*8,(double)globalZ*paso*8,(double)2, 1, semilla);
+            // y += 1.5f*pnoise2d((double)globalX*paso*2,(double)globalZ*paso*2,(double)2, 1, semilla)+
+            //                             1.25f*pnoise2d((double)globalX*paso*4,(double)globalZ*paso*4,(double)2, 1, semilla)+
+            //                             0.05f*pnoise2d((double)globalX*paso*8,(double)globalZ*paso*8,(double)2, 1, semilla);
+
+            y +=  1.5f*pnoise2d((double)globalX*paso,(double)globalZ*paso,(double)2, 1, semilla)+
+                                        1.0f*pnoise2d((double)globalX*paso*2,(double)globalZ*paso*2,(double)2, 1, semilla)+
+                                        0.5f*pnoise2d((double)globalX*paso*4,(double)globalZ*paso*4,(double)2, 1, semilla)+
+                                        0.25f*pnoise2d((double)globalX*paso*8,(double)globalZ*paso*8,(double)2, 1, semilla)+
+                                        0.05f*pnoise2d((double)globalX*paso*16,(double)globalZ*paso*16,(double)2, 1, semilla);
 
             // if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
             if(xcoord >= 0 && xcoord < size && zcoord >= 0 && zcoord < size)
@@ -378,12 +424,14 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     UploadMesh(&chunk.mesh, false);
 
     chunk.transform = MatrixTranslate(position.x, position.y, position.z);
+    chunk.texture = LoadTextureFromImage(textureImage);
 
     return chunk;
 }
 
 void RenderTerrainChunk(TerrainChunk chunk, Material material, Shader shader) {
     //Matrix mat = MatrixTranslate(chunk.position.x, chunk.position.y, chunk.position.z);
+    material.maps[MATERIAL_MAP_DIFFUSE].texture = chunk.texture;
     DrawMesh(chunk.mesh, material, chunk.transform);
     //chunk.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
     //DrawModel(chunk.model,chunk.position,1.0f,WHITE);
@@ -412,40 +460,6 @@ static int ENV_Z_CHU;
 static int ENV_X_PER;
 static int ENV_Y_PER;
 static int ENV_Z_PER;
-
-// TPE_Unit storedHeight(int32_t x, int32_t y)
-// {
-//     int zaux = y+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
-//     int xaux = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
-//     xaux = floor(mapear(xaux,(float)CHUNK_SIZE+(float)CHUNK_SIZE*0.5f,(MAP_WIDTH_CHUNKS*2-1)*CHUNK_SIZE+1,0,MAP_WIDTH_CHUNKS*2.0f*CHUNK_SIZE));
-//     zaux = floor(mapear(zaux,(float)CHUNK_SIZE+(float)CHUNK_SIZE*0.5f,(MAP_HEIGHT_CHUNKS*2-1)*CHUNK_SIZE+1,0,MAP_HEIGHT_CHUNKS*2.0f*CHUNK_SIZE));
-
-//     // int xChunk = (int)floor(xaux/((MAP_HEIGHT_CHUNKS*CHUNK_SIZE))-2);
-//     // int zChunk = (int)floor(zaux/((MAP_HEIGHT_CHUNKS*CHUNK_SIZE))-2);
-//     int xChunk = floor(mapear(xaux,0,MAP_HEIGHT_CHUNKS*2.0f*CHUNK_SIZE+1,0,MAP_HEIGHT_CHUNKS*2));
-//     int zChunk = floor(mapear(zaux,0,MAP_WIDTH_CHUNKS*2.0f*CHUNK_SIZE+1,0,MAP_WIDTH_CHUNKS*2));
-
-//     int xcoord = ((int)xaux-1)%CHUNK_SIZE;
-//     int zcoord = ((int)zaux-1)%CHUNK_SIZE;
-
-//     ENV_X = x;
-//     ENV_Y = 0;
-//     ENV_Z = y;
-//     ENV_X_CHU = xChunk;
-//     ENV_Z_CHU = zChunk;
-//     ENV_X_AUX = xcoord;
-//     ENV_Y_AUX = 0;
-//     ENV_Z_AUX = zcoord;
-
-//     if((xcoord < CHUNK_SIZE) && (zcoord < CHUNK_SIZE) && (xChunk < MAP_WIDTH_CHUNKS*2) && (zChunk < MAP_HEIGHT_CHUNKS*2) && (xcoord >= 0) && (zcoord >= 0) && (xChunk >= 0) && (zChunk >= 0))
-//     {
-//         ENV_Y = (TPE_Unit)terrainChunks[zChunk][xChunk].height[zcoord][xcoord];
-//         return (TPE_Unit)terrainChunks[zChunk][xChunk].height[zcoord][xcoord];
-//     } else
-//     {
-//         return 0;
-//     }
-// }
 
 TPE_Unit storedHeight(int32_t x, int32_t y)
 {
@@ -635,14 +649,15 @@ int main(int argc, char *argv[])
 
     // create the player
     Player player = {0};
-    joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
+    // joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
+    joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
     TPE_bodyInit(&bodies[1],joints + WATER_JOINTS,1,connections,0,1);
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
     bodies[1].flags |= TPE_BODY_FLAG_NONROTATING;
 
     bodies[1].friction = 400;
-    bodies[1].elasticity = 0;
+    bodies[1].elasticity = 128;
 
     player.body = &bodies[1];
     player.up = (Vector3){ 0.0f, 1.0f, 0.0f };
@@ -1008,6 +1023,7 @@ int main(int argc, char *argv[])
 
         if(CAMERA_MODE == FIRST_PERSON)
         {
+            HideCursor();
             camaraOrientarMouse(WINDOW_WIDTH, WINDOW_HEIGHT, &player);
 
             ortoTangente = Vector3CrossProduct(hitNormal, player.view);
@@ -1023,22 +1039,28 @@ int main(int argc, char *argv[])
             camera.position = player.position;
         }else if(CAMERA_MODE == STATIC)
         {
-            camera.position = (Vector3){10.0f, 10.0f, 10.0f};
+            ShowCursor();
+            ortoTangente = Vector3CrossProduct(hitNormal, player.view);
+            tangente = Vector3CrossProduct(hitNormal, ortoTangente);
+            tangente = Vector3Scale(tangente,Vector3DotProduct(player.view,tangente)/pow(Vector3Length(tangente),2));
+            tangente = Vector3Normalize(tangente);
+            ortoTangente = Vector3Normalize(ortoTangente);
+
+            camera.position = (Vector3){50.0f, 50.0f, 50.0f};
             camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
             camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
             camera.fovy = 80.0f;
             camera.projection = CAMERA_PERSPECTIVE;
-        }
-
-        if(TRIGGER_PRINTF)
+        }else if(CAMERA_MODE == THIRD_PERSON)
         {
-            fprintf(stdout,"[DEBUG] x_pos_d: %d\n",bodies[1].joints[0].position.x);
-            fprintf(stdout,"[DEBUG] y_pos_d: %d\n",bodies[1].joints[0].position.y);
-            fprintf(stdout,"[DEBUG] z_pos_d: %d\n",bodies[1].joints[0].position.z);
-            fprintf(stdout,"[DEBUG] x_pos_f: %f\n",spherePos.x);
-            fprintf(stdout,"[DEBUG] y_pos_f: %f\n",spherePos.y);
-            fprintf(stdout,"[DEBUG] z_pos_f: %f\n",spherePos.z);
-        }        
+            ShowCursor();
+
+            camera.position = (Vector3){0.0f, 200.0f, 0.0f};
+            camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+            camera.up = (Vector3){ 1.0f, 0.0f, 0.0f };
+            camera.fovy = 80.0f;
+            camera.projection = CAMERA_PERSPECTIVE;
+        }
         
         if(CLIENT_STARTED)
         {
@@ -1089,7 +1111,7 @@ int main(int argc, char *argv[])
         TRIGGER_PRINTF = false;
 
         BeginDrawing();
-            ClearBackground(LIGHTGRAY);
+            ClearBackground(SKYBLUE);
             BeginMode3D(camera);
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
                 BeginShaderMode(shader);
@@ -1097,7 +1119,8 @@ int main(int argc, char *argv[])
                     {
                         for (int xindex = 0; xindex < MAP_WIDTH_CHUNKS*2; xindex++)
                         {
-                            RenderTerrainChunk(terrainChunks[xindex][zindex], material, shader);
+                            if(dist2Chunk(terrainChunks[xindex][zindex], player.position) < VIEW_DISTANCE)
+                                RenderTerrainChunk(terrainChunks[xindex][zindex], material, shader);
                         }
                     }
                     // dibujar agua
@@ -1108,9 +1131,11 @@ int main(int argc, char *argv[])
                     //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
                     // }
                 EndShaderMode();
-                DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},BLUE);
+                DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},(Color){0,121,241,200});
 
                 DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(hitNormal,2.0f)),ORANGE);
+                DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(tangente,2.0f)),GREEN);
+
                 if(CLIENT_STARTED)
                 {
                     if (disconnected)
@@ -1146,7 +1171,18 @@ int main(int argc, char *argv[])
                         DrawClient(&local_client_state, true);
                     }
                 }
+                if(player.position.y < 0)
+                {
+                    DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
+                    DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
+                }
             EndMode3D();
+
+            if(player.position.y < 0)
+            {
+                DrawRectangle(0,0,WINDOW_WIDTH,WINDOW_HEIGHT,(Color){0,121,241,100});
+            }
+
             DrawFPS(10,10);
 
             DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",spherePos.x,spherePos.y,spherePos.z), 10, 20+10, 20, RED);
