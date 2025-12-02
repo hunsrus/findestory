@@ -153,6 +153,9 @@ void DrawClient(ClientState *state, bool is_local)
 // #define CHUNK_SIZE 4
 #define VIEW_DISTANCE CHUNK_SIZE*40
 
+TPE_Vec3 TEST_CUBE_CENTER = {10000,5000,0};
+TPE_Vec3 TEST_CUBE_SIZE = {10000/2,10000/2,10000/2}; // distance from center to corner (half the side lenght)
+
 // estructura para almacenar un chunk de terreno
 typedef struct TerrainChunk {
     Mesh mesh;
@@ -542,7 +545,9 @@ TPE_Unit height(int32_t x, int32_t y)
 TPE_Vec3 heightmapEnvironmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 {
 //   return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),height,maxD);
-  return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),storedHeight,maxD);
+    TPE_ENV_START   ( TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),storedHeight,maxD) , p)
+    TPE_ENV_NEXT    ( TPE_envAABox(p, TEST_CUBE_CENTER, TEST_CUBE_SIZE), p)
+    TPE_ENV_END
 }
 
 // --------------- UTILIDADES ------------------
@@ -1172,6 +1177,9 @@ int main(int argc, char *argv[])
                     // }
                 EndShaderMode();
                 DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},(Color){0,121,241,200});
+                DrawCube((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z},
+                            TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,
+                            MAGENTA);
 
                 DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(hitNormal,2.0f)),ORANGE);
                 DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(tangente,2.0f)),GREEN);
