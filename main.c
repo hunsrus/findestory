@@ -554,7 +554,7 @@ TPE_Vec3 heightmapEnvironmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 
 static int CAMERA_MODE = 0;
 
-enum CAMERA_MODES {FIRST_PERSON = 0, STATIC, THIRD_PERSON, LAST_ELEMENT};
+enum CAMERA_MODES {FIRST_PERSON = 0, THIRD_PERSON, STATIC, LAST_ELEMENT};
 
 static bool ON_TERRAIN = false;
 static bool ON_WATER = false;
@@ -1097,6 +1097,22 @@ int main(int argc, char *argv[])
             camera.projection = CAMERA_PERSPECTIVE;
         }else if(CAMERA_MODE == THIRD_PERSON)
         {
+            HideCursor();
+            camaraOrientarMouse(WINDOW_WIDTH, WINDOW_HEIGHT, &player);
+
+            ortoTangente = Vector3CrossProduct(hitNormal, player.view);
+            tangente = Vector3CrossProduct(hitNormal, ortoTangente);
+            tangente = Vector3Scale(tangente,Vector3DotProduct(player.view,tangente)/pow(Vector3Length(tangente),2));
+            tangente = Vector3Normalize(tangente);
+            ortoTangente = Vector3Normalize(ortoTangente);
+            
+            player.target = Vector3Add(player.view, player.position);
+            
+            camera.up = player.up;
+            camera.target = player.target;
+            camera.position = Vector3Subtract(player.position, Vector3Scale(player.view,5.0f));
+        }else if(CAMERA_MODE == LAST_ELEMENT)
+        {
             ShowCursor();
 
             camera.position = (Vector3){0.0f, 200.0f, 0.0f};
@@ -1219,14 +1235,14 @@ int main(int argc, char *argv[])
                         DrawClient(&local_client_state, true);
                     }
                 }
-                if(player.position.y < 0)
+                if(camera.position.y < 0)
                 {
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                 }
             EndMode3D();
 
-            if(player.position.y < 0)
+            if(camera.position.y < 0)
             {
                 DrawRectangle(0,0,WINDOW_WIDTH,WINDOW_HEIGHT,(Color){0,121,241,100});
             }
