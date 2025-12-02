@@ -23,9 +23,6 @@
 #define MAX_CONNECTIONS 2048
 
 TPE_World tpe_world;
-TPE_Body tpe_bodies[MAX_BODIES];
-TPE_Joint tpe_joints[MAX_JOINTS];
-TPE_Connection tpe_connections[MAX_CONNECTIONS];
 
 TPE_Joint joints[WATER_JOINTS + MAX_BODIES - 1];
 TPE_Connection connections[WATER_CONNECTIONS];
@@ -41,4 +38,20 @@ TPE_Vec3 helper_heightmapPointLocation(int index)
 TPE_Vec3 environmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 {
     return TPE_envAABoxInside(p,TPE_vec3(0,0,0),TPE_vec3(ROOM_SIZE,ROOM_SIZE,ROOM_SIZE));
+}
+
+uint8_t TPE_bodyEnvironmentCollideMOD(const TPE_Body *body,
+  TPE_ClosestPointFunction env)
+{
+  for (uint16_t i = 0; i < body->jointCount; ++i)
+  {
+    const TPE_Joint *joint = body->joints + i;
+
+    TPE_Unit size = TPE_JOINT_SIZE(*joint);
+
+    if (TPE_DISTANCE(joint->position,env(joint->position,size)) <= size*1.05)
+      return 1;
+  }
+
+  return 0;
 }

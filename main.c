@@ -461,6 +461,7 @@ void RenderTerrainChunk(TerrainChunk chunk, Material material, Shader shader) {
 }
 
 void UnloadTerrainChunk(TerrainChunk chunk) {
+    UnloadTexture(chunk.texture);
     UnloadMesh(chunk.mesh);
 }
 
@@ -623,13 +624,13 @@ int main(int argc, char *argv[])
     }
 
     // Texture2D terrainTexture = LoadTextureFromImage(LoadImage("src/img/favicon.png"));
-    Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
+    // Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
 
     Material material = LoadMaterialDefault();
-    material.maps[MATERIAL_MAP_DIFFUSE].texture = terrainTexture;
+    // material.maps[MATERIAL_MAP_DIFFUSE].texture = terrainTexture;
     material.shader = shader;
 
-    TPE_worldInit(&tpe_world,tpe_bodies,0,heightmapEnvironmentDistance);
+    // TPE_worldInit(&tpe_world,tpe_bodies,0,heightmapEnvironmentDistance);
 
     camera.position = (Vector3){10.0f, 10.0f, 10.0f};
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
@@ -672,11 +673,15 @@ int main(int argc, char *argv[])
     // create the player
     Player player = {0};
     // joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
-    joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
-    TPE_bodyInit(&bodies[1],joints + WATER_JOINTS,1,connections,0,1);
+    // joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
+    bodies[1].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint));
+    bodies[1].joints[0] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
+    bodies[1].jointCount = 1;
+    TPE_bodyInit(&bodies[1],bodies[1].joints,bodies[1].jointCount,connections,0,1);
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
     bodies[1].flags |= TPE_BODY_FLAG_NONROTATING;
+    // bodies[1].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
 
     bodies[1].friction = 400;
     bodies[1].elasticity = 128;
@@ -685,8 +690,14 @@ int main(int argc, char *argv[])
     player.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     player.view = (Vector3){ 1.0f, 1.0f, 1.0f };
 
+    // create test body
+    bodies[2].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint));
+    bodies[2].joints[0] = TPE_joint(TPE_vec3(100,8000,ROOM_SIZE / 4),BALL_SIZE);
+    bodies[2].jointCount = 1;
+    TPE_bodyInit(&bodies[2],bodies[2].joints,bodies[2].jointCount,connections,0,1);
+
     // update physics word
-    TPE_worldInit(&tpe_world,bodies,2,heightmapEnvironmentDistance);
+    TPE_worldInit(&tpe_world,bodies,3,heightmapEnvironmentDistance);
     
     // generate water mesh
     int i = 0, j = 0, k = 0;
@@ -932,6 +943,8 @@ int main(int argc, char *argv[])
     #define G ((8 * 30) / FPS)
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
             bodies[1].joints[0].position.y > 0 ? G : (-2 * G));
+        TPE_bodyApplyGravity(&tpe_world.bodies[2],
+            bodies[2].joints[0].position.y > 0 ? G : (-2 * G));
         
         player.acceleration = TPE_vec3(0,0,0);
         
@@ -940,11 +953,15 @@ int main(int argc, char *argv[])
         // fprintf(stdout, "[DEBUG] vertical distance: \t%f\n", ((float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D)-(float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
 
         // fprintf(stdout, "[DEBUG] body position \tx:%d\ty%d\tz:%d\n", bodies[1].joints[0].position.x,bodies[1].joints[0].position.y,bodies[1].joints[0].position.z);
-        if(abs((bodies[1].joints[0].position.y) - (storedHeight(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*2)
-        {
-            ON_TERRAIN = true;
+        // if(abs((bodies[1].joints[0].position.y) - (storedHeight(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*2)
+        // {
+        //     ON_TERRAIN = true;
             
-        }else ON_TERRAIN = false;
+        // }else ON_TERRAIN = false;
+
+        if(TPE_bodyEnvironmentCollideMOD(&bodies[1], tpe_world.environmentFunction) > 0)
+            ON_TERRAIN = true;
+        else ON_TERRAIN = false;
 
         if(bodies[1].joints[0].position.y < BALL_SIZE*2)
         {
@@ -978,9 +995,9 @@ int main(int argc, char *argv[])
             if (IsKeyDown(KEY_A))
                 player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},acceleration));
             if (IsKeyDown(KEY_SPACE))
-                player.acceleration.y = acceleration*10;
+                player.acceleration.y = acceleration*80;
             if (IsKeyDown(KEY_LEFT_CONTROL))
-                player.acceleration.y = -acceleration*10;
+                player.acceleration.y = -acceleration*20;
         }
 
         TPE_bodyAccelerate(player.body, player.acceleration);
@@ -1136,6 +1153,7 @@ int main(int argc, char *argv[])
             ClearBackground(SKYBLUE);
             BeginMode3D(camera);
                 DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
+                DrawSphereEx(Vector3Scale((Vector3){bodies[2].joints[0].position.x,bodies[2].joints[0].position.y,bodies[2].joints[0].position.z},SCALE_3D),BALL_SIZE*SCALE_3D,10, 10, ORANGE);
                 BeginShaderMode(shader);
                     for (int zindex = 0; zindex < MAP_HEIGHT_CHUNKS*2; zindex++)
                     {
@@ -1213,12 +1231,13 @@ int main(int argc, char *argv[])
             DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
             DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
             DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
+            DrawText(TextFormat("COL: %d",TPE_bodyEnvironmentCollideMOD(&bodies[1],tpe_world.environmentFunction)), 10, 20*7+10, 20, RED);
+            // DrawText(TextFormat("COL: %d",bodies[1].joints[0].sizeDivided), 10, 20*7+10, 20, RED);
         EndDrawing();
     }
 
     CloseWindow();
 
-    UnloadTexture(terrainTexture);
     for (int z = 0; z < MAP_HEIGHT_CHUNKS*2; z++) {
         for (int x = 0; x < MAP_WIDTH_CHUNKS*2; x++) {
             UnloadTerrainChunk(terrainChunks[x][z]);
