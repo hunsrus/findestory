@@ -677,16 +677,36 @@ int main(int argc, char *argv[])
 
     // create the player
     Player player = {0};
-    // joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,ROOM_SIZE*0.6,ROOM_SIZE / 4),BALL_SIZE);
-    // joints[WATER_JOINTS] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
-    bodies[1].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint));
-    bodies[1].joints[0] = TPE_joint(TPE_vec3(0,8000,ROOM_SIZE / 4),BALL_SIZE);
-    bodies[1].jointCount = 1;
-    TPE_bodyInit(&bodies[1],bodies[1].joints,bodies[1].jointCount,connections,0,1);
+    TPE_Vec3 playerInitPos = {0,8000,ROOM_SIZE / 4};
+    bodies[1].jointCount = 3;
+    bodies[1].connectionCount = 2;
+    bodies[1].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[1].jointCount);
+    bodies[1].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[1].connectionCount);
+
+    // base 0
+    bodies[1].joints[0] = TPE_joint(playerInitPos,BALL_SIZE);
+    // torso 1
+    playerInitPos.y += BALL_SIZE*2*0.8;
+    bodies[1].joints[1] = TPE_joint(playerInitPos,BALL_SIZE*0.8);
+    // cabeza 2
+    playerInitPos.y += BALL_SIZE*1.5;
+    bodies[1].joints[2] = TPE_joint(playerInitPos,BALL_SIZE*0.5);
+    
+    // connection base-chest
+    bodies[1].connections[0].joint1 = 0;
+    bodies[1].connections[0].joint2 = 1;
+    bodies[1].connections[0].length = BALL_SIZE;
+    // connection chest-head
+    bodies[1].connections[1].joint1 = 1;
+    bodies[1].connections[1].joint2 = 2;
+    bodies[1].connections[1].length = BALL_SIZE*1.5;
+
+    TPE_bodyInit(&bodies[1],bodies[1].joints,bodies[1].jointCount,bodies[1].connections,bodies[1].connectionCount,10000);
 
     bodies[1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
     bodies[1].flags |= TPE_BODY_FLAG_NONROTATING;
     // bodies[1].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
+    // bodies[1].flags |= TPE_BODY_FLAG_SOFT;
 
     bodies[1].friction = 400;
     bodies[1].elasticity = 128;
@@ -695,6 +715,62 @@ int main(int argc, char *argv[])
     player.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     player.view = (Vector3){ 1.0f, 1.0f, 1.0f };
 
+    // crear brazo izquierdo
+    playerInitPos = TPE_vec3(0,8000,ROOM_SIZE / 4);
+
+    bodies[3].jointCount = 2;
+    bodies[3].connectionCount = 1;
+    bodies[3].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[3].jointCount);
+    bodies[3].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[3].connectionCount);
+
+    // hombro 0
+    playerInitPos.y += BALL_SIZE*2;
+    playerInitPos.x -= BALL_SIZE*2;
+    bodies[3].joints[0] = TPE_joint(playerInitPos,BALL_SIZE/3);
+    // mano 1
+    playerInitPos.y -= BALL_SIZE;
+    playerInitPos.x -= BALL_SIZE;
+    bodies[3].joints[1] = TPE_joint(playerInitPos,BALL_SIZE/3);
+
+    // connection left shoulder-arm
+    bodies[3].connections[0].joint1 = 0;
+    bodies[3].connections[0].joint2 = 1;
+    bodies[3].connections[0].length = BALL_SIZE;
+
+    TPE_bodyInit(&bodies[3],bodies[3].joints,bodies[3].jointCount,bodies[3].connections,bodies[3].connectionCount,1);
+
+    bodies[3].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+    // bodies[3].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
+    // bodies[3].flags |= TPE_BODY_FLAG_SOFT;
+
+    // crear brazo derecho
+    playerInitPos = TPE_vec3(0,8000,ROOM_SIZE / 4);
+
+    bodies[4].jointCount = 2;
+    bodies[4].connectionCount = 1;
+    bodies[4].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[4].jointCount);
+    bodies[4].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[4].connectionCount);
+
+    // hombro 0
+    playerInitPos.y += BALL_SIZE*2;
+    playerInitPos.x += BALL_SIZE*2;
+    bodies[4].joints[0] = TPE_joint(playerInitPos,BALL_SIZE/3);
+    // mano 1
+    playerInitPos.y -= BALL_SIZE;
+    playerInitPos.x += BALL_SIZE;
+    bodies[4].joints[1] = TPE_joint(playerInitPos,BALL_SIZE/3);
+
+    // connection left shoulder-arm
+    bodies[4].connections[0].joint1 = 0;
+    bodies[4].connections[0].joint2 = 1;
+    bodies[4].connections[0].length = BALL_SIZE;
+
+    TPE_bodyInit(&bodies[4],bodies[4].joints,bodies[4].jointCount,bodies[4].connections,bodies[4].connectionCount,1);
+
+    bodies[4].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+    // bodies[4].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
+    // bodies[4].flags |= TPE_BODY_FLAG_SOFT;
+
     // create test body
     bodies[2].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint));
     bodies[2].joints[0] = TPE_joint(TPE_vec3(100,8000,ROOM_SIZE / 4),BALL_SIZE);
@@ -702,7 +778,7 @@ int main(int argc, char *argv[])
     TPE_bodyInit(&bodies[2],bodies[2].joints,bodies[2].jointCount,connections,0,1);
 
     // update physics word
-    TPE_worldInit(&tpe_world,bodies,3,heightmapEnvironmentDistance);
+    TPE_worldInit(&tpe_world,bodies,5,heightmapEnvironmentDistance);
     
     // generate water mesh
     int i = 0, j = 0, k = 0;
@@ -947,22 +1023,15 @@ int main(int argc, char *argv[])
 
     #define G ((8 * 30) / FPS)
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
-            bodies[1].joints[0].position.y > 0 ? G : (-2 * G));
+            bodies[1].joints[2].position.y > 0 ? G : (-2 * G));
         TPE_bodyApplyGravity(&tpe_world.bodies[2],
             bodies[2].joints[0].position.y > 0 ? G : (-2 * G));
+        TPE_bodyApplyGravity(&tpe_world.bodies[3],
+            (bodies[3].joints[0].position.y || bodies[3].joints[1].position.y) > 0 ? G : (-2 * G));
+        TPE_bodyApplyGravity(&tpe_world.bodies[4],
+            (bodies[4].joints[0].position.y || bodies[4].joints[1].position.y) > 0 ? G : (-2 * G));
         
         player.acceleration = TPE_vec3(0,0,0);
-        
-        // fprintf(stdout, "[DEBUG] terrain height: \t%f - ", (float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
-        // fprintf(stdout, "body Y position: \t%f\n", (float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D);
-        // fprintf(stdout, "[DEBUG] vertical distance: \t%f\n", ((float)(bodies[1].joints[0].position.y-BALL_SIZE)*SCALE_3D)-(float)(height(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D)*SCALE_3D));
-
-        // fprintf(stdout, "[DEBUG] body position \tx:%d\ty%d\tz:%d\n", bodies[1].joints[0].position.x,bodies[1].joints[0].position.y,bodies[1].joints[0].position.z);
-        // if(abs((bodies[1].joints[0].position.y) - (storedHeight(bodies[1].joints[0].position.x*SCALE_3D, bodies[1].joints[0].position.z*SCALE_3D))) < BALL_SIZE*2)
-        // {
-        //     ON_TERRAIN = true;
-            
-        // }else ON_TERRAIN = false;
 
         if(TPE_bodyEnvironmentCollideMOD(&bodies[1], tpe_world.environmentFunction) > 0)
             ON_TERRAIN = true;
@@ -1010,6 +1079,9 @@ int main(int argc, char *argv[])
         spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
         spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
+
+        bodies[3].joints[0].position = TPE_vec3Plus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
+        bodies[4].joints[0].position = TPE_vec3Minus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
 
         player.position = spherePos;
 
@@ -1081,6 +1153,7 @@ int main(int argc, char *argv[])
             camera.up = player.up;
             camera.target = player.target;
             camera.position = player.position;
+            // camera.position = (Vector3){bodies[1].joints[2].position.x*SCALE_3D,bodies[1].joints[2].position.y*SCALE_3D,bodies[1].joints[2].position.z*SCALE_3D};
         }else if(CAMERA_MODE == STATIC)
         {
             ShowCursor();
@@ -1173,8 +1246,19 @@ int main(int argc, char *argv[])
         BeginDrawing();
             ClearBackground(SKYBLUE);
             BeginMode3D(camera);
-                DrawSphereEx(spherePos,BALL_SIZE*SCALE_3D,10, 10, RED);
-                DrawSphereEx(Vector3Scale((Vector3){bodies[2].joints[0].position.x,bodies[2].joints[0].position.y,bodies[2].joints[0].position.z},SCALE_3D),BALL_SIZE*SCALE_3D,10, 10, ORANGE);
+                for(int i = 0; i < bodies[1].jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){bodies[1].joints[i].position.x,bodies[1].joints[i].position.y,bodies[1].joints[i].position.z},SCALE_3D),bodies[1].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, RED);
+                }
+                for(int i = 0; i < bodies[3].jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){bodies[3].joints[i].position.x,bodies[3].joints[i].position.y,bodies[3].joints[i].position.z},SCALE_3D),bodies[3].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, GREEN);
+                }
+                for(int i = 0; i < bodies[4].jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){bodies[4].joints[i].position.x,bodies[4].joints[i].position.y,bodies[4].joints[i].position.z},SCALE_3D),bodies[4].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, GREEN);
+                }
+                DrawSphereEx(Vector3Scale((Vector3){bodies[2].joints[0].position.x,bodies[2].joints[0].position.y,bodies[2].joints[0].position.z},SCALE_3D),bodies[2].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, ORANGE);
                 BeginShaderMode(shader);
                     for (int zindex = 0; zindex < MAP_HEIGHT_CHUNKS*2; zindex++)
                     {
@@ -1199,6 +1283,9 @@ int main(int argc, char *argv[])
 
                 DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(hitNormal,2.0f)),ORANGE);
                 DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(tangente,2.0f)),GREEN);
+
+                DrawCylinderEx(Vector3Scale((Vector3){bodies[3].joints[0].position.x,bodies[3].joints[0].position.y,bodies[3].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[3].joints[1].position.x,bodies[3].joints[1].position.y,bodies[3].joints[1].position.z},SCALE_3D),bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,GREEN);
+                DrawCylinderEx(Vector3Scale((Vector3){bodies[4].joints[0].position.x,bodies[4].joints[0].position.y,bodies[4].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[4].joints[1].position.x,bodies[4].joints[1].position.y,bodies[4].joints[1].position.z},SCALE_3D),bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,GREEN);
 
                 if(CLIENT_STARTED)
                 {
