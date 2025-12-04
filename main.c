@@ -121,7 +121,8 @@ Shader initShader(void)
 // --------------- PHYSICS ------------------
 #include "physics.h"
 
-Vector3 spherePos;
+TPE_Vec3 TEST_CUBE_CENTER = {10000,5000,0};
+TPE_Vec3 TEST_CUBE_SIZE = {10000/2,10000/2,10000/2}; // distance from center to corner (half the side length)
 
 // --------------- NETWORK ------------------
 #include "network.h"
@@ -152,9 +153,6 @@ void DrawClient(ClientState *state, bool is_local)
 #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
 // #define CHUNK_SIZE 4
 #define VIEW_DISTANCE CHUNK_SIZE*40
-
-TPE_Vec3 TEST_CUBE_CENTER = {10000,5000,0};
-TPE_Vec3 TEST_CUBE_SIZE = {10000/2,10000/2,10000/2}; // distance from center to corner (half the side lenght)
 
 // estructura para almacenar un chunk de terreno
 typedef struct TerrainChunk {
@@ -274,6 +272,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     int auxVertexCount = auxSize * auxSize;
     int auxTriangleCount = (auxSize - 1) * (auxSize - 1) * 2;
     auxMesh = (Mesh){ 0 };
+    // auxMesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
     auxMesh.vertexCount = auxVertexCount;
     auxMesh.triangleCount = auxTriangleCount;
     auxMesh.vertices = (float*)MemAlloc(auxVertexCount * 3 * sizeof(float));
@@ -300,6 +299,7 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
 
     // Asignar memoria dinámicamente para los arrays
     chunk.mesh = (Mesh){ 0 };
+    // chunk.mesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
     chunk.mesh.vertexCount = vertexCount;
     chunk.mesh.triangleCount = triangleCount;
     chunk.mesh.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float)); // 3 floats por vértice (x, y, z)
@@ -451,6 +451,8 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
 
     chunk.texture = LoadTextureFromImage(textureImage);
 
+    // UnloadImage(textureImage);
+
     return chunk;
 }
 
@@ -466,6 +468,12 @@ void RenderTerrainChunk(TerrainChunk chunk, Material material, Shader shader) {
 void UnloadTerrainChunk(TerrainChunk chunk) {
     UnloadTexture(chunk.texture);
     UnloadMesh(chunk.mesh);
+
+    for(int i = 0; i < CHUNK_SIZE; i++)
+    {
+        MemFree(chunk.height[i]);
+    }
+    MemFree(chunk.height);
 }
 
 float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
@@ -601,12 +609,14 @@ void camaraOrientarMouse(int pantallaAncho, int pantallaAlto, Player *jugador)
 
 int main(int argc, char *argv[])
 {
-    int WINDOW_WIDTH = 480;
-    int WINDOW_HEIGHT = 480;
+    int WINDOW_WIDTH = 800;
+    int WINDOW_HEIGHT = 600;
     InitWindow(WINDOW_WIDTH,WINDOW_HEIGHT,"findestory");
     SetTargetFPS(FPS);
 
     Shader shader = initShader();
+
+    fprintf(stdout,"[INFO][TERRAIN GEN] Generating chunks...\n");
 
     // Crear terreno en chunks
     const float scale = 1.0f;
@@ -628,6 +638,8 @@ int main(int argc, char *argv[])
         }
     }
 
+    fprintf(stdout,"[INFO][TERRAIN GEN] Chunks generation OK\n");
+
     // Texture2D terrainTexture = LoadTextureFromImage(LoadImage("src/img/favicon.png"));
     // Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
 
@@ -646,10 +658,11 @@ int main(int argc, char *argv[])
     Vector3 ortoTangente = Vector3Zero();
     Vector3 tangente = Vector3Zero();
 
+    fprintf(stdout,"[INFO][PYHSICS] Generating water body\n");
     // build the water body:
 
     for (int i = 0; i < HEIGHTMAP_3D_POINTS; ++i)
-        joints[i] = TPE_joint(helper_heightmapPointLocation(i),JOINT_SIZE);
+        joints[i] = TPE_joint(TPE_vec3Plus(helper_heightmapPointLocation(i),TPE_vec3(29000,4000,-27000)),JOINT_SIZE);
 
     int index = 0;
 
@@ -674,6 +687,10 @@ int main(int argc, char *argv[])
 
     bodies[0].flags |= TPE_BODY_FLAG_SOFT;
     bodies[0].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+
+    fprintf(stdout,"[INFO][PYHSICS] Water body generation OK\n");
+
+    fprintf(stdout,"[INFO][PYHSICS] Generating player body\n");
 
     // create the player
     Player player = {0};
@@ -708,7 +725,7 @@ int main(int argc, char *argv[])
     // bodies[1].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
     // bodies[1].flags |= TPE_BODY_FLAG_SOFT;
 
-    bodies[1].friction = 400;
+    bodies[1].friction = 200;
     bodies[1].elasticity = 128;
 
     player.body = &bodies[1];
@@ -771,15 +788,24 @@ int main(int argc, char *argv[])
     // bodies[4].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
     // bodies[4].flags |= TPE_BODY_FLAG_SOFT;
 
+    fprintf(stdout,"[INFO][PYHSICS] Player body generation OK\n");
+    
+    fprintf(stdout,"[INFO][PYHSICS] Generating test body\n");
+
     // create test body
     bodies[2].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint));
     bodies[2].joints[0] = TPE_joint(TPE_vec3(100,8000,ROOM_SIZE / 4),BALL_SIZE);
     bodies[2].jointCount = 1;
     TPE_bodyInit(&bodies[2],bodies[2].joints,bodies[2].jointCount,connections,0,1);
 
+    fprintf(stdout,"[INFO][PYHSICS] Test body generation OK\n");
+    
+    fprintf(stdout,"[INFO][PYHSICS] Initalizing world\n");
     // update physics word
     TPE_worldInit(&tpe_world,bodies,5,heightmapEnvironmentDistance);
+    fprintf(stdout,"[INFO][PYHSICS] World initialization OK\n");
     
+    fprintf(stdout,"[INFO][RENDER] Generating water mesh\n");
     // generate water mesh
     int i = 0, j = 0, k = 0;
     int filas = HEIGHTMAP_3D_RESOLUTION;
@@ -787,8 +813,8 @@ int main(int argc, char *argv[])
     
     Mesh mesh = {0};
     
-    mesh.vboId = (unsigned int *)RL_CALLOC(7, sizeof(unsigned int));
-    
+    // mesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
+
     // Triangles definition (indices)
     int numFaces = (filas - 1)*(columnas - 1);
     int *triangles = (int *)RL_MALLOC(numFaces*6*sizeof(int));
@@ -822,8 +848,8 @@ int main(int argc, char *argv[])
             mesh.vertices[k*3 + 1] = (float)joints[k].position.y*SCALE_3D;
             mesh.vertices[k*3 + 2] = (float)joints[k].position.z*SCALE_3D;
 
-            mesh.texcoords[2*k] = 0.0f;
-            mesh.texcoords[2*k + 1] = 0.0f;
+    //         mesh.texcoords[2*k] = 0.0f;
+    //         mesh.texcoords[2*k + 1] = 0.0f;
             
             mesh.normals[3*k] = 0.0f;
             mesh.normals[3*k + 1] = 1.0f;
@@ -833,7 +859,9 @@ int main(int argc, char *argv[])
     }
     for (int i = 0; i < mesh.triangleCount*3; i++) mesh.indices[i] = triangles[i];
     
-    UploadMesh(&mesh, true);    
+    UploadMesh(&mesh, true);
+
+    fprintf(stdout,"[INFO][RENDER] Water mesh generation OK\n");
 
     Matrix meshTransform = MatrixIdentity();
     Material meshMaterial = LoadMaterialDefault();
@@ -847,6 +875,8 @@ int main(int argc, char *argv[])
 
     pthread_t server_thread;
     int ev;
+
+    fprintf(stdout,"[INFO] Startup OK\n");
 
     while (!WindowShouldClose())
     {
@@ -937,87 +967,87 @@ int main(int argc, char *argv[])
         float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
         SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
 
-        // update the 3D model vertex positions:
+            // update the 3D model vertex positions:
 
-        for (int i = 0; i < WATER_JOINTS; ++i)
-        {
-            mesh.vertices[i*3] = (float)joints[i].position.x*SCALE_3D;
-            mesh.vertices[i*3 + 1] = (float)joints[i].position.y*SCALE_3D;
-            mesh.vertices[i*3 + 2] = (float)joints[i].position.z*SCALE_3D;
-        }
-
-        // Recorremos cada triángulo
-        for (int t = 0; t < mesh.triangleCount; t++) {
-            // int i0 = triangles[t*3 + 0];
-            // int i1 = triangles[t*3 + 1];
-            // int i2 = triangles[t*3 + 2];
-            int i0 = mesh.indices[t*3];
-            int i1 = mesh.indices[t*3+1];
-            int i2 = mesh.indices[t*3+2];
-
-            // Obtener posiciones de los 3 vértices
-            Vector3 v0 = {
-                mesh.vertices[i0*3 + 0],
-                mesh.vertices[i0*3 + 1],
-                mesh.vertices[i0*3 + 2]
-            };
-            Vector3 v1 = {
-                mesh.vertices[i1*3 + 0],
-                mesh.vertices[i1*3 + 1],
-                mesh.vertices[i1*3 + 2]
-            };
-            Vector3 v2 = {
-                mesh.vertices[i2*3 + 0],
-                mesh.vertices[i2*3 + 1],
-                mesh.vertices[i2*3 + 2]
-            };
-
-            // Calcular dos aristas
-            Vector3 e1 = { v1.x - v0.x, v1.y - v0.y, v1.z - v0.z };
-            Vector3 e2 = { v2.x - v0.x, v2.y - v0.y, v2.z - v0.z };
-
-            // Normal de la cara (producto vectorial)
-            Vector3 n = {
-                e1.y*e2.z - e1.z*e2.y,
-                e1.z*e2.x - e1.x*e2.z,
-                e1.x*e2.y - e1.y*e2.x
-            };
-
-            // Acumular la normal en cada vértice
-            mesh.normals[i0*3 + 0] += n.x;
-            mesh.normals[i0*3 + 1] += n.y;
-            mesh.normals[i0*3 + 2] += n.z;
-
-            mesh.normals[i1*3 + 0] += n.x;
-            mesh.normals[i1*3 + 1] += n.y;
-            mesh.normals[i1*3 + 2] += n.z;
-
-            mesh.normals[i2*3 + 0] += n.x;
-            mesh.normals[i2*3 + 1] += n.y;
-            mesh.normals[i2*3 + 2] += n.z;
-        }
-
-        // Normalizar cada normal de vértice
-        for (int i = 0; i < mesh.vertexCount; i++) {
-            float x = mesh.normals[i*3 + 0];
-            float y = mesh.normals[i*3 + 1];
-            float z = mesh.normals[i*3 + 2];
-            float len = sqrtf(x*x + y*y + z*z);
-            if (len > 0.0f) {
-                mesh.normals[i*3 + 0] = x / len;
-                mesh.normals[i*3 + 1] = y / len;
-                mesh.normals[i*3 + 2] = z / len;
+            for (int i = 0; i < WATER_JOINTS; ++i)
+            {
+                mesh.vertices[i*3] = (float)joints[i].position.x*SCALE_3D;
+                mesh.vertices[i*3 + 1] = (float)joints[i].position.y*SCALE_3D;
+                mesh.vertices[i*3 + 2] = (float)joints[i].position.z*SCALE_3D;
             }
-        }
-        
-        UpdateMeshBuffer(mesh, 0, mesh.vertices, sizeof(float) * mesh.vertexCount * 3, 0);
-        UpdateMeshBuffer(mesh, 2, mesh.normals, sizeof(float) * mesh.vertexCount * 3, 0);
+
+            // Recorremos cada triángulo
+            for (int t = 0; t < mesh.triangleCount; t++) {
+                // int i0 = triangles[t*3 + 0];
+                // int i1 = triangles[t*3 + 1];
+                // int i2 = triangles[t*3 + 2];
+                int i0 = mesh.indices[t*3];
+                int i1 = mesh.indices[t*3+1];
+                int i2 = mesh.indices[t*3+2];
+
+                // Obtener posiciones de los 3 vértices
+                Vector3 v0 = {
+                    mesh.vertices[i0*3 + 0],
+                    mesh.vertices[i0*3 + 1],
+                    mesh.vertices[i0*3 + 2]
+                };
+                Vector3 v1 = {
+                    mesh.vertices[i1*3 + 0],
+                    mesh.vertices[i1*3 + 1],
+                    mesh.vertices[i1*3 + 2]
+                };
+                Vector3 v2 = {
+                    mesh.vertices[i2*3 + 0],
+                    mesh.vertices[i2*3 + 1],
+                    mesh.vertices[i2*3 + 2]
+                };
+
+                // Calcular dos aristas
+                Vector3 e1 = { v1.x - v0.x, v1.y - v0.y, v1.z - v0.z };
+                Vector3 e2 = { v2.x - v0.x, v2.y - v0.y, v2.z - v0.z };
+
+                // Normal de la cara (producto vectorial)
+                Vector3 n = {
+                    e1.y*e2.z - e1.z*e2.y,
+                    e1.z*e2.x - e1.x*e2.z,
+                    e1.x*e2.y - e1.y*e2.x
+                };
+
+                // Acumular la normal en cada vértice
+                mesh.normals[i0*3 + 0] += n.x;
+                mesh.normals[i0*3 + 1] += n.y;
+                mesh.normals[i0*3 + 2] += n.z;
+
+                mesh.normals[i1*3 + 0] += n.x;
+                mesh.normals[i1*3 + 1] += n.y;
+                mesh.normals[i1*3 + 2] += n.z;
+
+                mesh.normals[i2*3 + 0] += n.x;
+                mesh.normals[i2*3 + 1] += n.y;
+                mesh.normals[i2*3 + 2] += n.z;
+            }
+
+            // Normalizar cada normal de vértice
+            for (int i = 0; i < mesh.vertexCount; i++) {
+                float x = mesh.normals[i*3 + 0];
+                float y = mesh.normals[i*3 + 1];
+                float z = mesh.normals[i*3 + 2];
+                float len = sqrtf(x*x + y*y + z*z);
+                if (len > 0.0f) {
+                    mesh.normals[i*3 + 0] = x / len;
+                    mesh.normals[i*3 + 1] = y / len;
+                    mesh.normals[i*3 + 2] = z / len;
+                }
+            }
+            
+            UpdateMeshBuffer(mesh, 0, mesh.vertices, sizeof(float) * mesh.vertexCount * 3, 0);
+            UpdateMeshBuffer(mesh, 2, mesh.normals, sizeof(float) * mesh.vertexCount * 3, 0);
 
         // pin the joints at the edges of the grid:
         for (int index = 0; index < WATER_JOINTS; ++index)
             if (index % HEIGHTMAP_3D_RESOLUTION == 0 || index % HEIGHTMAP_3D_RESOLUTION == HEIGHTMAP_3D_RESOLUTION - 1 ||
                 index / HEIGHTMAP_3D_RESOLUTION == 0 || index / HEIGHTMAP_3D_RESOLUTION == HEIGHTMAP_3D_RESOLUTION - 1)
-                TPE_jointPin(&joints[index],helper_heightmapPointLocation(index));
+                TPE_jointPin(&joints[index],TPE_vec3Plus(helper_heightmapPointLocation(index),TPE_vec3(29000,4000,-27000)));
 
         TPE_worldStep(&tpe_world);
 
@@ -1047,12 +1077,12 @@ int main(int argc, char *argv[])
         // if(ON_TERRAIN) acceleration = ACC;
         if(IsKeyDown(KEY_LEFT_SHIFT))
         {
-            if(ON_WATER) acceleration = 3;
-            if(ON_TERRAIN) acceleration = 3;
+            if(ON_WATER) acceleration = 2;
+            if(ON_TERRAIN) acceleration = 4;
         }else
         {
             if(ON_WATER) acceleration = 1;
-            if(ON_TERRAIN) acceleration = 1;
+            if(ON_TERRAIN) acceleration = 2;
         }
 
 
@@ -1076,14 +1106,15 @@ int main(int argc, char *argv[])
 
         TPE_bodyAccelerate(player.body, player.acceleration);
 
-        spherePos.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
-        spherePos.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
-        spherePos.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
+        player.position.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
+        player.position.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
+        player.position.z = (float)bodies[1].joints[0].position.z*SCALE_3D;
 
+        // creo que funciona mejor fijar las junturas a mano que usando la función jointPin. revisar
+        // me parece que es porque joint pin anula todas las velocidades, es como para fijar la juntura a un punto que no va a moverse. pero si el punto al que se fija la juntura es móvil medio que no anda bien.
+        // TPE_jointPin(&bodies[3].joints[0],TPE_vec3Plus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D)));
         bodies[3].joints[0].position = TPE_vec3Plus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
         bodies[4].joints[0].position = TPE_vec3Minus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
-
-        player.position = spherePos;
 
         Vector3 p0 = player.position;
         Vector3 p1 = player.position;
@@ -1246,20 +1277,25 @@ int main(int argc, char *argv[])
         BeginDrawing();
             ClearBackground(SKYBLUE);
             BeginMode3D(camera);
+                // draw body
                 for(int i = 0; i < bodies[1].jointCount; i++)
                 {
                     DrawSphereEx(Vector3Scale((Vector3){bodies[1].joints[i].position.x,bodies[1].joints[i].position.y,bodies[1].joints[i].position.z},SCALE_3D),bodies[1].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, RED);
                 }
+                // draw left hand and shoulder
                 for(int i = 0; i < bodies[3].jointCount; i++)
                 {
-                    DrawSphereEx(Vector3Scale((Vector3){bodies[3].joints[i].position.x,bodies[3].joints[i].position.y,bodies[3].joints[i].position.z},SCALE_3D),bodies[3].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, GREEN);
+                    DrawSphereEx(Vector3Scale((Vector3){bodies[3].joints[i].position.x,bodies[3].joints[i].position.y,bodies[3].joints[i].position.z},SCALE_3D),bodies[3].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, DARKGRAY);
                 }
+                // draw right hand and shoulder
                 for(int i = 0; i < bodies[4].jointCount; i++)
                 {
-                    DrawSphereEx(Vector3Scale((Vector3){bodies[4].joints[i].position.x,bodies[4].joints[i].position.y,bodies[4].joints[i].position.z},SCALE_3D),bodies[4].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, GREEN);
+                    DrawSphereEx(Vector3Scale((Vector3){bodies[4].joints[i].position.x,bodies[4].joints[i].position.y,bodies[4].joints[i].position.z},SCALE_3D),bodies[4].joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, DARKGRAY);
                 }
+                // draw test ball
                 DrawSphereEx(Vector3Scale((Vector3){bodies[2].joints[0].position.x,bodies[2].joints[0].position.y,bodies[2].joints[0].position.z},SCALE_3D),bodies[2].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, ORANGE);
                 BeginShaderMode(shader);
+                    // draw terrain
                     for (int zindex = 0; zindex < MAP_HEIGHT_CHUNKS*2; zindex++)
                     {
                         for (int xindex = 0; xindex < MAP_WIDTH_CHUNKS*2; xindex++)
@@ -1269,23 +1305,27 @@ int main(int argc, char *argv[])
                         }
                     }
                     // dibujar agua
-                    // DrawMesh(mesh, meshMaterial, meshTransform);
+                    DrawMesh(mesh, meshMaterial, meshTransform);
                     // for (int i = 0; i < WATER_JOINTS; ++i)
                     // {
                     //     Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
                     //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
                     // }
                 EndShaderMode();
+                
+                // draw arms
+                DrawCylinderEx(Vector3Scale((Vector3){bodies[3].joints[0].position.x,bodies[3].joints[0].position.y,bodies[3].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[3].joints[1].position.x,bodies[3].joints[1].position.y,bodies[3].joints[1].position.z},SCALE_3D),bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
+                DrawCylinderEx(Vector3Scale((Vector3){bodies[4].joints[0].position.x,bodies[4].joints[0].position.y,bodies[4].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[4].joints[1].position.x,bodies[4].joints[1].position.y,bodies[4].joints[1].position.z},SCALE_3D),bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
+                // draw water plane
                 DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},(Color){0,121,241,200});
+                // draw test cube
                 DrawCube((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z},
                             TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,
-                            MAGENTA);
-
-                DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(hitNormal,2.0f)),ORANGE);
-                DrawLine3D(spherePos,Vector3Add(spherePos,Vector3Scale(tangente,2.0f)),GREEN);
-
-                DrawCylinderEx(Vector3Scale((Vector3){bodies[3].joints[0].position.x,bodies[3].joints[0].position.y,bodies[3].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[3].joints[1].position.x,bodies[3].joints[1].position.y,bodies[3].joints[1].position.z},SCALE_3D),bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,GREEN);
-                DrawCylinderEx(Vector3Scale((Vector3){bodies[4].joints[0].position.x,bodies[4].joints[0].position.y,bodies[4].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[4].joints[1].position.x,bodies[4].joints[1].position.y,bodies[4].joints[1].position.z},SCALE_3D),bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,GREEN);
+                            (Color){ 255, 0, 255, 220 });
+                DrawCubeWires((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z},TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,BLACK);
+                // draw terrain normal and tangent vector on player position
+                DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(hitNormal,2.0f)),ORANGE);
+                DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(tangente,2.0f)),GREEN);
 
                 if(CLIENT_STARTED)
                 {
@@ -1322,13 +1362,16 @@ int main(int argc, char *argv[])
                         DrawClient(&local_client_state, true);
                     }
                 }
+
+                // draw bottom side of water plane when camera is underwater
                 if(camera.position.y < 0)
                 {
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                 }
             EndMode3D();
-
+            
+            // draw blue overlay when camera is underwater
             if(camera.position.y < 0)
             {
                 DrawRectangle(0,0,WINDOW_WIDTH,WINDOW_HEIGHT,(Color){0,121,241,100});
@@ -1336,8 +1379,8 @@ int main(int argc, char *argv[])
 
             DrawFPS(10,10);
 
-            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",spherePos.x,spherePos.y,spherePos.z), 10, 20+10, 20, RED);
-            DrawText(TextFormat("PHY: %d\t%d\t%d",(TPE_Unit)spherePos.x,storedHeight((TPE_Unit)spherePos.x,(TPE_Unit)spherePos.z),(TPE_Unit)spherePos.z), 10, 20*2+10, 20, RED);
+            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",player.position.x,player.position.y,player.position.z), 10, 20+10, 20, RED);
+            DrawText(TextFormat("PHY: %d\t%d\t%d",(TPE_Unit)player.position.x,storedHeight((TPE_Unit)player.position.x,(TPE_Unit)player.position.z),(TPE_Unit)player.position.z), 10, 20*2+10, 20, RED);
             DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 20*3+10, 20, RED);
             DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
             DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
@@ -1347,20 +1390,29 @@ int main(int argc, char *argv[])
         EndDrawing();
     }
 
+    fprintf(stdout,"[INFO] Closing window\n");
     CloseWindow();
 
+    fprintf(stdout,"[INFO] Unloading default material\n");
+    UnloadMaterial(material);
+
+    fprintf(stdout,"[INFO] Unloading chunks\n");
     for (int z = 0; z < MAP_HEIGHT_CHUNKS*2; z++) {
         for (int x = 0; x < MAP_WIDTH_CHUNKS*2; x++) {
             UnloadTerrainChunk(terrainChunks[x][z]);
         }
     }
 
+    // UnloadShader(shader);
+
+    fprintf(stdout,"[INFO] Stopping game client\n");
     if(CLIENT_STARTED)
     {
         NBN_GameClient_Stop();
         fprintf(stderr, "[CLIENT] Connection closed\n");
     }
 
+    fprintf(stdout,"[INFO] Joining server thread\n");
     if(SERVER_STARTED)
     {
         running = false;
@@ -1368,6 +1420,8 @@ int main(int argc, char *argv[])
         pthread_join(server_thread, NULL);
         fprintf(stderr, "[SERVER] Server has stopped\n");
     }
+
+    fprintf(stdout,"[INFO] gusbai\n");
 
     return 0;
 }
