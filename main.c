@@ -680,7 +680,7 @@ int main(int argc, char *argv[])
     TPE_Vec3 playerInitPos = {0,8000,ROOM_SIZE / 4};
     bodies[1].jointCount = 3;
     bodies[1].connectionCount = 2;
-    bodies[1].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[1].jointCount);
+    bodies[1].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint)*bodies[1].jointCount);
     bodies[1].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[1].connectionCount);
 
     // base 0
@@ -720,7 +720,7 @@ int main(int argc, char *argv[])
 
     bodies[3].jointCount = 2;
     bodies[3].connectionCount = 1;
-    bodies[3].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[3].jointCount);
+    bodies[3].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint)*bodies[3].jointCount);
     bodies[3].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[3].connectionCount);
 
     // hombro 0
@@ -748,7 +748,7 @@ int main(int argc, char *argv[])
 
     bodies[4].jointCount = 2;
     bodies[4].connectionCount = 1;
-    bodies[4].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint)*bodies[4].jointCount);
+    bodies[4].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint)*bodies[4].jointCount);
     bodies[4].connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*bodies[4].connectionCount);
 
     // hombro 0
@@ -772,7 +772,7 @@ int main(int argc, char *argv[])
     // bodies[4].flags |= TPE_BODY_FLAG_SOFT;
 
     // create test body
-    bodies[2].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_joint));
+    bodies[2].joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint));
     bodies[2].joints[0] = TPE_joint(TPE_vec3(100,8000,ROOM_SIZE / 4),BALL_SIZE);
     bodies[2].jointCount = 1;
     TPE_bodyInit(&bodies[2],bodies[2].joints,bodies[2].jointCount,connections,0,1);
