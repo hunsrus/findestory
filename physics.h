@@ -49,7 +49,7 @@ uint8_t TPE_bodyEnvironmentCollideMOD(const TPE_Body *body,
 
     TPE_Unit size = TPE_JOINT_SIZE(*joint);
 
-    if (TPE_DISTANCE(joint->position,env(joint->position,size)) <= size*1.05)
+    if (TPE_DISTANCE(joint->position,env(joint->position,size)) <= size*1.015)
       return 1;
   }
 

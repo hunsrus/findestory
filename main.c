@@ -725,7 +725,7 @@ int main(int argc, char *argv[])
     // bodies[1].flags |= TPE_BODY_FLAG_SIMPLE_CONN;
     // bodies[1].flags |= TPE_BODY_FLAG_SOFT;
 
-    bodies[1].friction = 200;
+    bodies[1].friction = 100;
     bodies[1].elasticity = 128;
 
     player.body = &bodies[1];
@@ -878,8 +878,37 @@ int main(int argc, char *argv[])
 
     fprintf(stdout,"[INFO] Startup OK\n");
 
+    #define attackSize 3
+    int attackSequence[attackSize] = {KEY_A,KEY_W,KEY_D};
+    int attackState = 0;
+    int attackResult = -1;
+    char attackLog[255] = "-";
+    int pressedKey = 0;
+
     while (!WindowShouldClose())
     {
+        if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)){
+            strcpy(attackLog, "IN PROGRESS...");
+            if(pressedKey = GetKeyPressed())
+            {
+                if(attackState < attackSize)
+                {
+                    fprintf(stdout,"[DEBUG] Pressed key: %d\n",pressedKey);
+                    fprintf(stdout,"[DEBUG] Attack state: %d\n",attackState);
+                    if(pressedKey == attackSequence[attackState]) attackState++;
+                    else
+                    {
+                        attackState = attackSize;
+                        attackResult = 0;
+                    }
+                    if((attackState >= attackSize) && (attackResult == -1))
+                    {
+                        attackResult = 1;
+                    }
+                }
+            }
+        }
+
         if(IsKeyPressed(KEY_T)) TRIGGER_PRINTF = true;
 
         if(IsKeyPressed(KEY_V))
@@ -1051,7 +1080,7 @@ int main(int argc, char *argv[])
 
         TPE_worldStep(&tpe_world);
 
-    #define G ((8 * 30) / FPS)
+    #define G ((10 * 30) / FPS)
         TPE_bodyApplyGravity(&tpe_world.bodies[1],
             bodies[1].joints[2].position.y > 0 ? G : (-2 * G));
         TPE_bodyApplyGravity(&tpe_world.bodies[2],
@@ -1075,14 +1104,17 @@ int main(int argc, char *argv[])
         TPE_Unit acceleration;
         // if(ON_WATER) acceleration = ACC/2;
         // if(ON_TERRAIN) acceleration = ACC;
-        if(IsKeyDown(KEY_LEFT_SHIFT))
+        if(IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
-            if(ON_WATER) acceleration = 2;
-            if(ON_TERRAIN) acceleration = 4;
+            acceleration = 2;
+        }else if(IsKeyDown(KEY_LEFT_SHIFT))
+        {
+            if(ON_WATER) acceleration = 10;
+            if(ON_TERRAIN) acceleration = 40;
         }else
         {
-            if(ON_WATER) acceleration = 1;
-            if(ON_TERRAIN) acceleration = 2;
+            if(ON_WATER) acceleration = 5;
+            if(ON_TERRAIN) acceleration = 30;
         }
 
 
@@ -1090,21 +1122,40 @@ int main(int argc, char *argv[])
         {
             if (IsKeyDown(KEY_W))
             // player.acceleration.z = -acceleration;
-            player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*5,tangente.y*5,tangente.z*5},acceleration));
+            player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*5,tangente.y*5,tangente.z*5},1024));
             // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
             if (IsKeyDown(KEY_S))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*10,tangente.y*10,tangente.z*10},-acceleration));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*10,tangente.y*10,tangente.z*10},-1024));
             if (IsKeyDown(KEY_D))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},-acceleration));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},-1024));
             if (IsKeyDown(KEY_A))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},acceleration));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},1024));
+            
+            Vector3 auxAcc = Vector3Scale(Vector3Normalize((Vector3){player.acceleration.x,player.acceleration.y,player.acceleration.z}),acceleration);
+        
+            player.acceleration.x = (TPE_Unit)auxAcc.x;
+            player.acceleration.y = (TPE_Unit)auxAcc.y;
+            player.acceleration.z = (TPE_Unit)auxAcc.z;
+
             if (IsKeyDown(KEY_SPACE))
-                player.acceleration.y = acceleration*80;
+                player.acceleration.y = acceleration*4;
             if (IsKeyDown(KEY_LEFT_CONTROL))
-                player.acceleration.y = -acceleration*20;
+                player.acceleration.y = -acceleration;
         }
 
+        // fprintf(stdout,"acc: %d\t%d\t%d\n",player.acceleration.x, player.acceleration.y, player.acceleration.z);
+
         TPE_bodyAccelerate(player.body, player.acceleration);
+
+        // [TODO] borrar esto, la solución es detectar con más precisión la colisión con el terreno o más bien cuando se está aplicando o no la fricción entre ambos
+        if(!ON_TERRAIN)
+        {
+            TPE_bodyAccelerate(player.body, TPE_vec3(-bodies[1].joints[0].velocity[0]*0.008f,0,-bodies[1].joints[0].velocity[2]*0.008f));
+        }
+        if(ON_WATER)
+        {
+            TPE_bodyAccelerate(player.body, TPE_vec3(-bodies[1].joints[0].velocity[0]*0.05f,0,-bodies[1].joints[0].velocity[2]*0.005f));
+        }
 
         player.position.x = (float)bodies[1].joints[0].position.x*SCALE_3D; 
         player.position.y = (float)bodies[1].joints[0].position.y*SCALE_3D;
@@ -1224,6 +1275,30 @@ int main(int argc, char *argv[])
             camera.up = (Vector3){ 1.0f, 0.0f, 0.0f };
             camera.fovy = 80.0f;
             camera.projection = CAMERA_PERSPECTIVE;
+        }
+
+        TPE_Vec3 testBodyVMin, testBodyVMax;
+        TPE_bodyGetAABB(&bodies[2], &testBodyVMin, &testBodyVMax);
+        TPE_Vec3 attackZoneVMin, attackZoneVMax;
+        TPE_bodyGetAABB(&bodies[1], &attackZoneVMin, &attackZoneVMax);
+        attackZoneVMin = TPE_vec3Plus(attackZoneVMin,TPE_vec3(player.view.x*1.0/SCALE_3D,0,player.view.z*1.0/SCALE_3D));
+        attackZoneVMax = TPE_vec3Plus(attackZoneVMax,TPE_vec3(player.view.x*1.0/SCALE_3D,0,player.view.z*1.0/SCALE_3D));
+
+        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+        {
+            if(attackResult == -1) strcpy(attackLog, "INCOMPLETE");
+            if(attackResult == 0) strcpy(attackLog, "FAIL");
+            if(attackResult == 1) strcpy(attackLog, "SUCCESS");
+            attackState = 0;
+            
+            if(attackResult == 1)
+            {
+                if(TPE_checkOverlapAABB(testBodyVMin, testBodyVMax, attackZoneVMin, attackZoneVMax))
+                {
+                    TPE_bodyAccelerate(&bodies[2],TPE_vec3(player.view.x*0.5/SCALE_3D,0,player.view.z*0.5/SCALE_3D));
+                }
+            }
+            attackResult = -1;
         }
         
         if(CLIENT_STARTED)
@@ -1369,6 +1444,10 @@ int main(int argc, char *argv[])
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                 }
+
+                DrawCube((Vector3){(attackZoneVMin.x+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.y+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.z+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D},
+                            (attackZoneVMax.x-attackZoneVMin.x)*SCALE_3D,(attackZoneVMax.y-attackZoneVMin.y)*SCALE_3D,(attackZoneVMax.z-attackZoneVMin.z)*SCALE_3D,
+                            (Color){ 255, 203, 0, 220 });
             EndMode3D();
             
             // draw blue overlay when camera is underwater
@@ -1386,7 +1465,10 @@ int main(int argc, char *argv[])
             DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
             DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
             DrawText(TextFormat("COL: %d",TPE_bodyEnvironmentCollideMOD(&bodies[1],tpe_world.environmentFunction)), 10, 20*7+10, 20, RED);
+            DrawText(TextFormat("HIT: %d",TPE_checkOverlapAABB(testBodyVMin, testBodyVMax, attackZoneVMin, attackZoneVMax)), 10, 20*8+10, 20, RED);
             // DrawText(TextFormat("COL: %d",bodies[1].joints[0].sizeDivided), 10, 20*7+10, 20, RED);
+
+            DrawText(TextFormat("ATTACK: %s",attackLog), 10, WINDOW_HEIGHT-20, 20, ORANGE);
         EndDrawing();
     }
 
