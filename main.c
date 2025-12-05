@@ -121,8 +121,8 @@ Shader initShader(void)
 // --------------- PHYSICS ------------------
 #include "physics.h"
 
-TPE_Vec3 TEST_CUBE_CENTER = {10000,5000,0};
-TPE_Vec3 TEST_CUBE_SIZE = {10000/2,10000/2,10000/2}; // distance from center to corner (half the side length)
+TPE_Vec3 TEST_CUBE_CENTER = {40000,0,80000};
+TPE_Vec3 TEST_CUBE_SIZE = {40000/2,10000/2,40000/2}; // distance from center to corner (half the side length)
 
 // --------------- NETWORK ------------------
 #include "network.h"
@@ -272,7 +272,6 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
     int auxVertexCount = auxSize * auxSize;
     int auxTriangleCount = (auxSize - 1) * (auxSize - 1) * 2;
     auxMesh = (Mesh){ 0 };
-    // auxMesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
     auxMesh.vertexCount = auxVertexCount;
     auxMesh.triangleCount = auxTriangleCount;
     auxMesh.vertices = (float*)MemAlloc(auxVertexCount * 3 * sizeof(float));
@@ -299,7 +298,6 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
 
     // Asignar memoria dinámicamente para los arrays
     chunk.mesh = (Mesh){ 0 };
-    // chunk.mesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
     chunk.mesh.vertexCount = vertexCount;
     chunk.mesh.triangleCount = triangleCount;
     chunk.mesh.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float)); // 3 floats por vértice (x, y, z)
@@ -387,26 +385,22 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
             else k = 3;
 
 
-            // if(x >= 1 && x < auxSize-1 && z >= 1 && z < auxSize-1)
             if(xcoord >= 0 && xcoord < size && zcoord >= 0 && zcoord < size)
             {
                 ImageDrawPixel(&textureImage, xcoord, zcoord, (Color){rand()%((color[k].r+OFFSETCOLOR)-(color[k].r-OFFSETCOLOR)+1)+(color[k].r-OFFSETCOLOR),rand()%((color[k].g+OFFSETCOLOR)-(color[k].g-OFFSETCOLOR)+1)+(color[k].g-OFFSETCOLOR),rand()%((color[k].b+OFFSETCOLOR)-(color[k].b-OFFSETCOLOR)+1)+(color[k].b-OFFSETCOLOR),255});
-                // fprintf(stdout, "[DEBUG] nCounterAux: %d", nCounterAux);
-                // Agregar vértices
+                
                 // [TODO] X e Y siempre son iguales, no hace falta recalcular para cada chunk. optimizar.
                 chunk.mesh.vertices[vCounter++] = xcoord * scale;
                 chunk.mesh.vertices[vCounter++] = y;
                 chunk.mesh.vertices[vCounter++] = zcoord * scale;
 
-                // Agregar normales
                 chunk.mesh.normals[nCounter++] = 0.0f;
                 chunk.mesh.normals[nCounter++] = 0.0f;
                 chunk.mesh.normals[nCounter++] = 0.0f;
 
-                // Agregar coordenadas de textura
                 chunk.mesh.texcoords[tCounter++] = (float)xcoord / (size-1);
                 chunk.mesh.texcoords[tCounter++] = (float)zcoord / (size-1);
-                // Agregar índices para los triángulos
+                
                 if (x < auxSize-2 && z < auxSize-2) {
                     chunk.mesh.indices[iCounter++] = (zcoord * size) + xcoord;
                     chunk.mesh.indices[iCounter++] = ((zcoord + 1) * size) + xcoord;
@@ -444,25 +438,19 @@ TerrainChunk GenerateTerrainChunk(int size, float scale, Vector3 position) {
 
     CalculateNormals(&auxMesh, &chunk.mesh);
 
-    // Sube la malla a la GPU
     UploadMesh(&chunk.mesh, false);
 
     chunk.transform = MatrixTranslate(position.x, position.y, position.z);
-
     chunk.texture = LoadTextureFromImage(textureImage);
 
-    // UnloadImage(textureImage);
+    UnloadImage(textureImage);
 
     return chunk;
 }
 
 void RenderTerrainChunk(TerrainChunk chunk, Material material, Shader shader) {
-    //Matrix mat = MatrixTranslate(chunk.position.x, chunk.position.y, chunk.position.z);
     material.maps[MATERIAL_MAP_DIFFUSE].texture = chunk.texture;
     DrawMesh(chunk.mesh, material, chunk.transform);
-    //chunk.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
-    //DrawModel(chunk.model,chunk.position,1.0f,WHITE);
-    //UnloadMaterial(material);
 }
 
 void UnloadTerrainChunk(TerrainChunk chunk) {
@@ -480,8 +468,6 @@ float dist2Chunk(TerrainChunk chunk, Vector3 refPoint)
 {
     return Vector3Length(Vector3Subtract(chunk.position,refPoint));
 }
-
-static bool TRIGGER_PRINTF = false;
 
 static int ENV_X;
 static int ENV_Y;
@@ -525,41 +511,72 @@ TPE_Unit storedHeight(int32_t x, int32_t y)
     }
 }
 
-TPE_Unit height(int32_t x, int32_t y)
-{
-    float scale = 1.0f;
-    
-    int zcoord = y+MAP_HEIGHT_CHUNKS*CHUNK_SIZE;
-    int xcoord = x+MAP_WIDTH_CHUNKS*CHUNK_SIZE;
-
-    float paso = 0.1f;
-    // unsigned int semilla = 180100;
-    unsigned int semilla = 118;
-
-    float height = 1.5f*pnoise2d((double)xcoord*paso*2,(double)zcoord*paso*2,(double)2, 1, semilla)+
-                                1.25f*pnoise2d((double)xcoord*paso*4,(double)zcoord*paso*4,(double)2, 1, semilla)+
-                                0.05f*pnoise2d((double)xcoord*paso*8,(double)zcoord*paso*8,(double)2, 1, semilla);
-
-    ENV_X_PER = xcoord;
-    ENV_Y_PER = (TPE_Unit)(height/SCALE_3D);
-    ENV_Z_PER = zcoord;
-
-    storedHeight(x,y);
-
-    return (TPE_Unit)(height/SCALE_3D);
-}
-
-
 TPE_Vec3 heightmapEnvironmentDistance(TPE_Vec3 p, TPE_Unit maxD)
 {
-//   return TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),height,maxD);
     TPE_ENV_START   ( TPE_envHeightmap(p,TPE_vec3(0,0,0),(TPE_Unit)(1/SCALE_3D),storedHeight,maxD) , p)
     TPE_ENV_NEXT    ( TPE_envAABox(p, TEST_CUBE_CENTER, TEST_CUBE_SIZE), p)
     TPE_ENV_END
 }
 
+// [TODO] optimizar esta garompa
+Vector3 getTerrainNormal(Vector3 position)
+{
+    Vector3 p0 = position;
+    Vector3 p1 = position;
+    Vector3 p2 = position;
+    Vector3 p3 = position;
+    Vector3 p4 = position;
+    Vector3 p5 = position;
+    Vector3 p6 = position;
+    Vector3 p7 = position;
+    Vector3 p8 = position;
+    p0.y = (float)storedHeight((TPE_Unit)(position.x),(TPE_Unit)(position.z))*SCALE_3D;
+    p1.x -= 1;
+    p1.y = (float)storedHeight((TPE_Unit)p1.x,(TPE_Unit)p1.z)*SCALE_3D;
+    p2.x += 1;
+    p2.y = (float)storedHeight((TPE_Unit)p2.x,(TPE_Unit)p2.z)*SCALE_3D;
+    p3.z -= 1;
+    p3.y = (float)storedHeight((TPE_Unit)p3.x,(TPE_Unit)p3.z)*SCALE_3D;
+    p4.x += 1;
+    p4.y = (float)storedHeight((TPE_Unit)p4.x,(TPE_Unit)p4.z)*SCALE_3D;
+    p5.x -= 1;
+    p5.z -= 1;
+    p5.y = (float)storedHeight((TPE_Unit)p5.x,(TPE_Unit)p5.z)*SCALE_3D;
+    p6.x -= 1;
+    p6.z += 1;
+    p6.y = (float)storedHeight((TPE_Unit)p6.x,(TPE_Unit)p6.z)*SCALE_3D;
+    p7.x += 1;
+    p7.z += 1;
+    p7.y = (float)storedHeight((TPE_Unit)p7.x,(TPE_Unit)p7.z)*SCALE_3D;
+    p8.x += 1;
+    p8.z -= 1;
+    p8.y = (float)storedHeight((TPE_Unit)p8.x,(TPE_Unit)p8.z)*SCALE_3D;
+
+    Vector3 v1 = Vector3Subtract(p1,p0);
+    Vector3 v2 = Vector3Subtract(p2,p0);
+    Vector3 v3 = Vector3Subtract(p3,p0);
+    Vector3 v4 = Vector3Subtract(p4,p0);
+    Vector3 v5 = Vector3Subtract(p5,p0);
+    Vector3 v6 = Vector3Subtract(p6,p0);
+    Vector3 v7 = Vector3Subtract(p7,p0);
+    Vector3 v8 = Vector3Subtract(p8,p0);
+
+    Vector3 cruz1 = Vector3CrossProduct(v1,v2);
+    Vector3 cruz2 = Vector3CrossProduct(v2,v3);
+    Vector3 cruz3 = Vector3CrossProduct(v3,v4);
+    Vector3 cruz4 = Vector3CrossProduct(v4,v5);
+    Vector3 cruz5 = Vector3CrossProduct(v5,v6);
+    Vector3 cruz6 = Vector3CrossProduct(v6,v7);
+    Vector3 cruz7 = Vector3CrossProduct(v7,v8);
+    Vector3 cruz8 = Vector3CrossProduct(v8,v1);
+
+    Vector3 hitNormal = Vector3Scale(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(cruz1,cruz2),cruz3),cruz4),cruz5),cruz6),cruz7),cruz8),1.0f/8.0f);
+    return Vector3Normalize(hitNormal);
+}
+
 // --------------- UTILIDADES ------------------
 
+static bool SHOW_DEBUG = false;
 static int CAMERA_MODE = 0;
 
 enum CAMERA_MODES {FIRST_PERSON = 0, THIRD_PERSON, STATIC, LAST_ELEMENT};
@@ -640,14 +657,8 @@ int main(int argc, char *argv[])
 
     fprintf(stdout,"[INFO][TERRAIN GEN] Chunks generation OK\n");
 
-    // Texture2D terrainTexture = LoadTextureFromImage(LoadImage("src/img/favicon.png"));
-    // Texture2D terrainTexture = LoadTextureFromImage(GenImageColor(CHUNK_SIZE,CHUNK_SIZE,BROWN));
-
     Material material = LoadMaterialDefault();
-    // material.maps[MATERIAL_MAP_DIFFUSE].texture = terrainTexture;
     material.shader = shader;
-
-    // TPE_worldInit(&tpe_world,tpe_bodies,0,heightmapEnvironmentDistance);
 
     camera.position = (Vector3){10.0f, 10.0f, 10.0f};
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
@@ -812,8 +823,6 @@ int main(int argc, char *argv[])
     int columnas = HEIGHTMAP_3D_RESOLUTION;
     
     Mesh mesh = {0};
-    
-    // mesh.vboId = (unsigned int *)MemAlloc(sizeof(unsigned int)*7);
 
     // Triangles definition (indices)
     int numFaces = (filas - 1)*(columnas - 1);
@@ -865,7 +874,6 @@ int main(int argc, char *argv[])
 
     Matrix meshTransform = MatrixIdentity();
     Material meshMaterial = LoadMaterialDefault();
-    // meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
     meshMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){0,90,190,100};
     meshMaterial.shader = shader;
 
@@ -893,8 +901,6 @@ int main(int argc, char *argv[])
             {
                 if(attackState < attackSize)
                 {
-                    fprintf(stdout,"[DEBUG] Pressed key: %d\n",pressedKey);
-                    fprintf(stdout,"[DEBUG] Attack state: %d\n",attackState);
                     if(pressedKey == attackSequence[attackState]) attackState++;
                     else
                     {
@@ -909,7 +915,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        if(IsKeyPressed(KEY_T)) TRIGGER_PRINTF = true;
+        if(IsKeyPressed(KEY_TAB)) SHOW_DEBUG = !SHOW_DEBUG;
 
         if(IsKeyPressed(KEY_V))
         {
@@ -987,7 +993,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // UpdateCamera(&camera, CAMERA_ORBITAL);
         UpdateCamera(&camera, CAMERA_CUSTOM);
 
         SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position.x, SHADER_UNIFORM_VEC3);
@@ -996,81 +1001,81 @@ int main(int argc, char *argv[])
         float cameraPos[3] = { camera.position.x, camera.position.y, camera.position.z };
         SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
 
-            // update the 3D model vertex positions:
+        // update the 3D model vertex positions:
 
-            for (int i = 0; i < WATER_JOINTS; ++i)
-            {
-                mesh.vertices[i*3] = (float)joints[i].position.x*SCALE_3D;
-                mesh.vertices[i*3 + 1] = (float)joints[i].position.y*SCALE_3D;
-                mesh.vertices[i*3 + 2] = (float)joints[i].position.z*SCALE_3D;
+        for (int i = 0; i < WATER_JOINTS; ++i)
+        {
+            mesh.vertices[i*3] = (float)joints[i].position.x*SCALE_3D;
+            mesh.vertices[i*3 + 1] = (float)joints[i].position.y*SCALE_3D;
+            mesh.vertices[i*3 + 2] = (float)joints[i].position.z*SCALE_3D;
+        }
+
+        // Recorremos cada triángulo
+        for (int t = 0; t < mesh.triangleCount; t++) {
+            // int i0 = triangles[t*3 + 0];
+            // int i1 = triangles[t*3 + 1];
+            // int i2 = triangles[t*3 + 2];
+            int i0 = mesh.indices[t*3];
+            int i1 = mesh.indices[t*3+1];
+            int i2 = mesh.indices[t*3+2];
+
+            // Obtener posiciones de los 3 vértices
+            Vector3 v0 = {
+                mesh.vertices[i0*3 + 0],
+                mesh.vertices[i0*3 + 1],
+                mesh.vertices[i0*3 + 2]
+            };
+            Vector3 v1 = {
+                mesh.vertices[i1*3 + 0],
+                mesh.vertices[i1*3 + 1],
+                mesh.vertices[i1*3 + 2]
+            };
+            Vector3 v2 = {
+                mesh.vertices[i2*3 + 0],
+                mesh.vertices[i2*3 + 1],
+                mesh.vertices[i2*3 + 2]
+            };
+
+            // Calcular dos aristas
+            Vector3 e1 = { v1.x - v0.x, v1.y - v0.y, v1.z - v0.z };
+            Vector3 e2 = { v2.x - v0.x, v2.y - v0.y, v2.z - v0.z };
+
+            // Normal de la cara (producto vectorial)
+            Vector3 n = {
+                e1.y*e2.z - e1.z*e2.y,
+                e1.z*e2.x - e1.x*e2.z,
+                e1.x*e2.y - e1.y*e2.x
+            };
+
+            // Acumular la normal en cada vértice
+            mesh.normals[i0*3 + 0] += n.x;
+            mesh.normals[i0*3 + 1] += n.y;
+            mesh.normals[i0*3 + 2] += n.z;
+
+            mesh.normals[i1*3 + 0] += n.x;
+            mesh.normals[i1*3 + 1] += n.y;
+            mesh.normals[i1*3 + 2] += n.z;
+
+            mesh.normals[i2*3 + 0] += n.x;
+            mesh.normals[i2*3 + 1] += n.y;
+            mesh.normals[i2*3 + 2] += n.z;
+        }
+
+        // Normalizar cada normal de vértice
+        for (int i = 0; i < mesh.vertexCount; i++) {
+            float x = mesh.normals[i*3 + 0];
+            float y = mesh.normals[i*3 + 1];
+            float z = mesh.normals[i*3 + 2];
+            float len = sqrtf(x*x + y*y + z*z);
+            if (len > 0.0f) {
+                mesh.normals[i*3 + 0] = x / len;
+                mesh.normals[i*3 + 1] = y / len;
+                mesh.normals[i*3 + 2] = z / len;
             }
-
-            // Recorremos cada triángulo
-            for (int t = 0; t < mesh.triangleCount; t++) {
-                // int i0 = triangles[t*3 + 0];
-                // int i1 = triangles[t*3 + 1];
-                // int i2 = triangles[t*3 + 2];
-                int i0 = mesh.indices[t*3];
-                int i1 = mesh.indices[t*3+1];
-                int i2 = mesh.indices[t*3+2];
-
-                // Obtener posiciones de los 3 vértices
-                Vector3 v0 = {
-                    mesh.vertices[i0*3 + 0],
-                    mesh.vertices[i0*3 + 1],
-                    mesh.vertices[i0*3 + 2]
-                };
-                Vector3 v1 = {
-                    mesh.vertices[i1*3 + 0],
-                    mesh.vertices[i1*3 + 1],
-                    mesh.vertices[i1*3 + 2]
-                };
-                Vector3 v2 = {
-                    mesh.vertices[i2*3 + 0],
-                    mesh.vertices[i2*3 + 1],
-                    mesh.vertices[i2*3 + 2]
-                };
-
-                // Calcular dos aristas
-                Vector3 e1 = { v1.x - v0.x, v1.y - v0.y, v1.z - v0.z };
-                Vector3 e2 = { v2.x - v0.x, v2.y - v0.y, v2.z - v0.z };
-
-                // Normal de la cara (producto vectorial)
-                Vector3 n = {
-                    e1.y*e2.z - e1.z*e2.y,
-                    e1.z*e2.x - e1.x*e2.z,
-                    e1.x*e2.y - e1.y*e2.x
-                };
-
-                // Acumular la normal en cada vértice
-                mesh.normals[i0*3 + 0] += n.x;
-                mesh.normals[i0*3 + 1] += n.y;
-                mesh.normals[i0*3 + 2] += n.z;
-
-                mesh.normals[i1*3 + 0] += n.x;
-                mesh.normals[i1*3 + 1] += n.y;
-                mesh.normals[i1*3 + 2] += n.z;
-
-                mesh.normals[i2*3 + 0] += n.x;
-                mesh.normals[i2*3 + 1] += n.y;
-                mesh.normals[i2*3 + 2] += n.z;
-            }
-
-            // Normalizar cada normal de vértice
-            for (int i = 0; i < mesh.vertexCount; i++) {
-                float x = mesh.normals[i*3 + 0];
-                float y = mesh.normals[i*3 + 1];
-                float z = mesh.normals[i*3 + 2];
-                float len = sqrtf(x*x + y*y + z*z);
-                if (len > 0.0f) {
-                    mesh.normals[i*3 + 0] = x / len;
-                    mesh.normals[i*3 + 1] = y / len;
-                    mesh.normals[i*3 + 2] = z / len;
-                }
-            }
-            
-            UpdateMeshBuffer(mesh, 0, mesh.vertices, sizeof(float) * mesh.vertexCount * 3, 0);
-            UpdateMeshBuffer(mesh, 2, mesh.normals, sizeof(float) * mesh.vertexCount * 3, 0);
+        }
+        
+        UpdateMeshBuffer(mesh, 0, mesh.vertices, sizeof(float) * mesh.vertexCount * 3, 0);
+        UpdateMeshBuffer(mesh, 2, mesh.normals, sizeof(float) * mesh.vertexCount * 3, 0);
 
         // pin the joints at the edges of the grid:
         for (int index = 0; index < WATER_JOINTS; ++index)
@@ -1140,10 +1145,8 @@ int main(int argc, char *argv[])
             if (IsKeyDown(KEY_SPACE))
                 player.acceleration.y = acceleration*4;
             if (IsKeyDown(KEY_LEFT_CONTROL))
-                player.acceleration.y = -acceleration;
+                player.acceleration.y = -acceleration*4;
         }
-
-        // fprintf(stdout,"acc: %d\t%d\t%d\n",player.acceleration.x, player.acceleration.y, player.acceleration.z);
 
         TPE_bodyAccelerate(player.body, player.acceleration);
 
@@ -1167,57 +1170,7 @@ int main(int argc, char *argv[])
         bodies[3].joints[0].position = TPE_vec3Plus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
         bodies[4].joints[0].position = TPE_vec3Minus(bodies[1].joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
 
-        Vector3 p0 = player.position;
-        Vector3 p1 = player.position;
-        Vector3 p2 = player.position;
-        Vector3 p3 = player.position;
-        Vector3 p4 = player.position;
-        Vector3 p5 = player.position;
-        Vector3 p6 = player.position;
-        Vector3 p7 = player.position;
-        Vector3 p8 = player.position;
-        p0.y = (float)storedHeight((TPE_Unit)(player.position.x),(TPE_Unit)(player.position.z))*SCALE_3D;
-        p1.x -= 1;
-        p1.y = (float)storedHeight((TPE_Unit)p1.x,(TPE_Unit)p1.z)*SCALE_3D;
-        p2.x += 1;
-        p2.y = (float)storedHeight((TPE_Unit)p2.x,(TPE_Unit)p2.z)*SCALE_3D;
-        p3.z -= 1;
-        p3.y = (float)storedHeight((TPE_Unit)p3.x,(TPE_Unit)p3.z)*SCALE_3D;
-        p4.x += 1;
-        p4.y = (float)storedHeight((TPE_Unit)p4.x,(TPE_Unit)p4.z)*SCALE_3D;
-        p5.x -= 1;
-        p5.z -= 1;
-        p5.y = (float)storedHeight((TPE_Unit)p5.x,(TPE_Unit)p5.z)*SCALE_3D;
-        p6.x -= 1;
-        p6.z += 1;
-        p6.y = (float)storedHeight((TPE_Unit)p6.x,(TPE_Unit)p6.z)*SCALE_3D;
-        p7.x += 1;
-        p7.z += 1;
-        p7.y = (float)storedHeight((TPE_Unit)p7.x,(TPE_Unit)p7.z)*SCALE_3D;
-        p8.x += 1;
-        p8.z -= 1;
-        p8.y = (float)storedHeight((TPE_Unit)p8.x,(TPE_Unit)p8.z)*SCALE_3D;
-
-        Vector3 v1 = Vector3Subtract(p1,p0);
-        Vector3 v2 = Vector3Subtract(p2,p0);
-        Vector3 v3 = Vector3Subtract(p3,p0);
-        Vector3 v4 = Vector3Subtract(p4,p0);
-        Vector3 v5 = Vector3Subtract(p5,p0);
-        Vector3 v6 = Vector3Subtract(p6,p0);
-        Vector3 v7 = Vector3Subtract(p7,p0);
-        Vector3 v8 = Vector3Subtract(p8,p0);
-
-        Vector3 cruz1 = Vector3CrossProduct(v1,v2);
-        Vector3 cruz2 = Vector3CrossProduct(v2,v3);
-        Vector3 cruz3 = Vector3CrossProduct(v3,v4);
-        Vector3 cruz4 = Vector3CrossProduct(v4,v5);
-        Vector3 cruz5 = Vector3CrossProduct(v5,v6);
-        Vector3 cruz6 = Vector3CrossProduct(v6,v7);
-        Vector3 cruz7 = Vector3CrossProduct(v7,v8);
-        Vector3 cruz8 = Vector3CrossProduct(v8,v1);
-
-        Vector3 hitNormal = Vector3Scale(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(Vector3Add(cruz1,cruz2),cruz3),cruz4),cruz5),cruz6),cruz7),cruz8),1.0f/8.0f);
-        hitNormal = Vector3Normalize(hitNormal);
+        Vector3 hitNormal = getTerrainNormal(player.position);
 
         if(CAMERA_MODE == FIRST_PERSON)
         {
@@ -1233,9 +1186,10 @@ int main(int argc, char *argv[])
             player.target = Vector3Add(player.view, player.position);
             
             camera.up = player.up;
-            camera.target = player.target;
-            camera.position = player.position;
-            // camera.position = (Vector3){bodies[1].joints[2].position.x*SCALE_3D,bodies[1].joints[2].position.y*SCALE_3D,bodies[1].joints[2].position.z*SCALE_3D};
+            // camera.target = player.target;
+            // camera.position = player.position;
+            camera.target = Vector3Add(player.target,(Vector3){0,(bodies[1].joints[1].sizeDivided+bodies[1].joints[2].sizeDivided)*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,0});
+            camera.position = (Vector3){bodies[1].joints[2].position.x*SCALE_3D,bodies[1].joints[2].position.y*SCALE_3D,bodies[1].joints[2].position.z*SCALE_3D};
         }else if(CAMERA_MODE == STATIC)
         {
             ShowCursor();
@@ -1347,8 +1301,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        TRIGGER_PRINTF = false;
-
         BeginDrawing();
             ClearBackground(SKYBLUE);
             BeginMode3D(camera);
@@ -1381,26 +1333,39 @@ int main(int argc, char *argv[])
                     }
                     // dibujar agua
                     DrawMesh(mesh, meshMaterial, meshTransform);
-                    // for (int i = 0; i < WATER_JOINTS; ++i)
-                    // {
-                    //     Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
-                    //     DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
-                    // }
+                    if(SHOW_DEBUG)
+                    {
+                        for (int i = 0; i < WATER_JOINTS; ++i)
+                        {
+                            Vector3 jointPos = {mesh.vertices[i*3],mesh.vertices[i*3 + 1],mesh.vertices[i*3 + 2]};
+                            DrawSphereEx(jointPos,JOINT_SIZE*SCALE_3D,10, 10, GREEN);
+                        }
+                    }
                 EndShaderMode();
                 
                 // draw arms
                 DrawCylinderEx(Vector3Scale((Vector3){bodies[3].joints[0].position.x,bodies[3].joints[0].position.y,bodies[3].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[3].joints[1].position.x,bodies[3].joints[1].position.y,bodies[3].joints[1].position.z},SCALE_3D),bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[3].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
                 DrawCylinderEx(Vector3Scale((Vector3){bodies[4].joints[0].position.x,bodies[4].joints[0].position.y,bodies[4].joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){bodies[4].joints[1].position.x,bodies[4].joints[1].position.y,bodies[4].joints[1].position.z},SCALE_3D),bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,bodies[4].joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
-                // draw water plane
-                DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},(Color){0,121,241,200});
                 // draw test cube
-                DrawCube((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z},
+                DrawCubeWires((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z*SCALE_3D},TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,BLACK);
+                DrawCube((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z*SCALE_3D},
                             TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,
                             (Color){ 255, 0, 255, 220 });
-                DrawCubeWires((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z},TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,BLACK);
+                DrawCubeWires((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z*SCALE_3D},TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,BLACK);
+                
                 // draw terrain normal and tangent vector on player position
-                DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(hitNormal,2.0f)),ORANGE);
-                DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(tangente,2.0f)),GREEN);
+                if(SHOW_DEBUG)
+                {
+                    DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(hitNormal,2.0f)),ORANGE);
+                    DrawLine3D(player.position,Vector3Add(player.position,Vector3Scale(tangente,2.0f)),GREEN);
+
+                    DrawCube((Vector3){(attackZoneVMin.x+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.y+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.z+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D},
+                            (attackZoneVMax.x-attackZoneVMin.x)*SCALE_3D,(attackZoneVMax.y-attackZoneVMin.y)*SCALE_3D,(attackZoneVMax.z-attackZoneVMin.z)*SCALE_3D,
+                            (Color){ 255, 203, 0, 220 });
+                }
+
+                // draw water plane
+                DrawPlane(Vector3Zero(),(Vector2){MAP_WIDTH_CHUNKS*2*CHUNK_SIZE,MAP_HEIGHT_CHUNKS*2*CHUNK_SIZE},(Color){0,121,241,200});
 
                 if(CLIENT_STARTED)
                 {
@@ -1444,10 +1409,6 @@ int main(int argc, char *argv[])
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                     DrawTriangle3D((Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,-MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Vector3){-MAP_WIDTH_CHUNKS*CHUNK_SIZE,0.0f,MAP_HEIGHT_CHUNKS*CHUNK_SIZE},(Color){0,121,241,200});
                 }
-
-                DrawCube((Vector3){(attackZoneVMin.x+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.y+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D,(attackZoneVMin.z+(attackZoneVMax.x-attackZoneVMin.x)*0.5f)*SCALE_3D},
-                            (attackZoneVMax.x-attackZoneVMin.x)*SCALE_3D,(attackZoneVMax.y-attackZoneVMin.y)*SCALE_3D,(attackZoneVMax.z-attackZoneVMin.z)*SCALE_3D,
-                            (Color){ 255, 203, 0, 220 });
             EndMode3D();
             
             // draw blue overlay when camera is underwater
@@ -1456,19 +1417,22 @@ int main(int argc, char *argv[])
                 DrawRectangle(0,0,WINDOW_WIDTH,WINDOW_HEIGHT,(Color){0,121,241,100});
             }
 
-            DrawFPS(10,10);
+            if(SHOW_DEBUG)
+            {
+                DrawFPS(10,10);
 
-            DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",player.position.x,player.position.y,player.position.z), 10, 20+10, 20, RED);
-            DrawText(TextFormat("PHY: %d\t%d\t%d",(TPE_Unit)player.position.x,storedHeight((TPE_Unit)player.position.x,(TPE_Unit)player.position.z),(TPE_Unit)player.position.z), 10, 20*2+10, 20, RED);
-            DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 20*3+10, 20, RED);
-            DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
-            DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
-            DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
-            DrawText(TextFormat("COL: %d",TPE_bodyEnvironmentCollideMOD(&bodies[1],tpe_world.environmentFunction)), 10, 20*7+10, 20, RED);
-            DrawText(TextFormat("HIT: %d",TPE_checkOverlapAABB(testBodyVMin, testBodyVMax, attackZoneVMin, attackZoneVMax)), 10, 20*8+10, 20, RED);
-            // DrawText(TextFormat("COL: %d",bodies[1].joints[0].sizeDivided), 10, 20*7+10, 20, RED);
+                DrawText(TextFormat("POS: %.2f\t%.2f\t%.2f",player.position.x,player.position.y,player.position.z), 10, 20+10, 20, RED);
+                DrawText(TextFormat("PHY: %d\t%d\t%d",(TPE_Unit)player.position.x,storedHeight((TPE_Unit)player.position.x,(TPE_Unit)player.position.z),(TPE_Unit)player.position.z), 10, 20*2+10, 20, RED);
+                DrawText(TextFormat("ENV: %d\t%d\t%d",ENV_X,ENV_Y,ENV_Z), 10, 20*3+10, 20, RED);
+                DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
+                DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
+                DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
+                DrawText(TextFormat("COL: %d",TPE_bodyEnvironmentCollideMOD(&bodies[1],tpe_world.environmentFunction)), 10, 20*7+10, 20, RED);
+                DrawText(TextFormat("HIT: %d",TPE_checkOverlapAABB(testBodyVMin, testBodyVMax, attackZoneVMin, attackZoneVMax)), 10, 20*8+10, 20, RED);
+                // DrawText(TextFormat("COL: %d",bodies[1].joints[0].sizeDivided), 10, 20*7+10, 20, RED);
 
-            DrawText(TextFormat("ATTACK: %s",attackLog), 10, WINDOW_HEIGHT-20, 20, ORANGE);
+                DrawText(TextFormat("ATTACK: %s",attackLog), 10, WINDOW_HEIGHT-20, 20, ORANGE);
+            }
         EndDrawing();
     }
 
@@ -1484,8 +1448,6 @@ int main(int argc, char *argv[])
             UnloadTerrainChunk(terrainChunks[x][z]);
         }
     }
-
-    // UnloadShader(shader);
 
     fprintf(stdout,"[INFO] Stopping game client\n");
     if(CLIENT_STARTED)
