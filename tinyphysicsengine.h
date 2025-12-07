@@ -279,9 +279,9 @@ typedef void (*TPE_DebugDrawFunction)(uint16_t, uint16_t, uint8_t);
 typedef struct
 {
   TPE_Joint *joints;
-  uint8_t jointCount;
+  uint32_t jointCount;
   TPE_Connection *connections;
-  uint8_t connectionCount;
+  uint32_t connectionCount;
   TPE_UnitReduced jointMass;       ///< mass of a single joint
   TPE_UnitReduced friction;        ///< friction of each joint
   TPE_UnitReduced elasticity;      ///< elasticity of each joint
@@ -316,8 +316,8 @@ uint8_t TPE_testClosestPointFunction(TPE_ClosestPointFunction f,
   TPE_UnitReduced allowedError, TPE_Vec3 *errorPoint);
 
 void TPE_bodyInit(TPE_Body *body, 
-  TPE_Joint *joints, uint8_t jointCount, 
-  TPE_Connection *connections, uint8_t connectionCount,
+  TPE_Joint *joints, uint32_t jointCount, 
+  TPE_Connection *connections, uint32_t connectionCount,
   TPE_Unit mass);
 
 void TPE_worldInit(TPE_World *world,
@@ -780,8 +780,8 @@ TPE_Unit TPE_distApprox(TPE_Vec3 p1, TPE_Vec3 p2)
 }
 
 void TPE_bodyInit(TPE_Body *body, 
-  TPE_Joint *joints, uint8_t jointCount, 
-  TPE_Connection *connections, uint8_t connectionCount,
+  TPE_Joint *joints, uint32_t jointCount, 
+  TPE_Connection *connections, uint32_t connectionCount,
   TPE_Unit mass)
 {
   body->joints = joints;

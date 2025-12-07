@@ -618,13 +618,14 @@ static void CreateClient(ClientState state)
     TraceLog(LOG_INFO, "New remote client (ID: %d)", client->client_id);
 
     // generate a physics body for the new client
-    joints[WATER_JOINTS+local_client_count] = TPE_joint(TPE_vec3(client->x,client->y,client->z),BALL_SIZE);
-    TPE_bodyInit(&bodies[local_client_count+1],joints + WATER_JOINTS + local_client_count,1,connections,0,200);
+    TPE_Joint *clientJoints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint));
+    clientJoints[0] = TPE_joint(TPE_vec3(client->x,client->y,client->z),BALL_SIZE);
+    TPE_Connection *clientConnections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*0);
+    TPE_bodyInit(&bodies[tpe_world.bodyCount++],clientJoints,1,clientConnections,0,200);
 
-    bodies[local_client_count+1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
+    bodies[tpe_world.bodyCount-1].flags |= TPE_BODY_FLAG_ALWAYS_ACTIVE;
 
-    // 2 porque cuento el cuerpo del agua y el del cliente local
-    TPE_worldInit(&tpe_world,bodies,2+local_client_count,environmentDistance);
+    TPE_worldInit(&tpe_world,bodies,tpe_world.bodyCount,environmentDistance);
 }
 
 static void UpdateClient(ClientState state)
