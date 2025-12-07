@@ -150,7 +150,6 @@ void DrawClient(ClientState *state, bool is_local)
 #define MAP_WIDTH_CHUNKS 20
 #define MAP_HEIGHT_CHUNKS 20
 // #define CHUNK_SIZE 64
-// #define CHUNK_SIZE (int)(ROOM_SIZE*SCALE_3D)
 #define CHUNK_SIZE 8
 #define VIEW_DISTANCE CHUNK_SIZE*40
 
@@ -581,8 +580,20 @@ static int CAMERA_MODE = 0;
 
 enum CAMERA_MODES {FIRST_PERSON = 0, THIRD_PERSON, STATIC, LAST_ELEMENT};
 
-static bool ON_TERRAIN = false;
-static bool ON_WATER = false;
+typedef struct{
+    TPE_Body *mainBody;
+    TPE_Body *leftArm;
+    TPE_Body *rightArm;
+    Vector3 position;
+    Vector3 view;
+    Vector3 target;
+    Vector3 up;
+    Vector3 velocity;
+    TPE_Vec3 acceleration;
+    TPE_Unit maxAcceleration;
+    bool onTerrain;
+    bool onWater;
+}Player;
 
 typedef struct{
     TPE_Body *mainBody;
@@ -594,7 +605,10 @@ typedef struct{
     Vector3 up;
     Vector3 velocity;
     TPE_Vec3 acceleration;
-}Player;
+    TPE_Unit maxAcceleration;
+    bool onTerrain;
+    bool onWater;
+}NPC;
 
 void camaraOrientarMouse(int pantallaAncho, int pantallaAlto, Player *jugador)
 {
@@ -670,7 +684,10 @@ int main(int argc, char *argv[])
 
     Vector3 ortoTangente = Vector3Zero();
     Vector3 tangente = Vector3Zero();
+    Vector3 testNPCortoTangente = Vector3Zero();
+    Vector3 testNPCtangente = Vector3Zero();
 
+    bodies = (TPE_Body*)MemAlloc(sizeof(TPE_Body)*MAX_BODIES);
     TPE_worldInit(&tpe_world,bodies,0,heightmapEnvironmentDistance);
 
     fprintf(stdout,"[INFO][PYHSICS] Generating water body\n");
@@ -688,15 +705,15 @@ int main(int argc, char *argv[])
     {
         for (int i = 0; i < HEIGHTMAP_3D_RESOLUTION - 1; ++i)
         {
-        waterConnections[index].joint1 = j * HEIGHTMAP_3D_RESOLUTION + i;
-        waterConnections[index].joint2 = waterConnections[index].joint1 + 1;
+            waterConnections[index].joint1 = j * HEIGHTMAP_3D_RESOLUTION + i;
+            waterConnections[index].joint2 = waterConnections[index].joint1 + 1;
 
-        index++;
+            index++;
 
-        waterConnections[index].joint1 = i * HEIGHTMAP_3D_RESOLUTION + j;
-        waterConnections[index].joint2 = waterConnections[index].joint1 + HEIGHTMAP_3D_RESOLUTION;
+            waterConnections[index].joint1 = i * HEIGHTMAP_3D_RESOLUTION + j;
+            waterConnections[index].joint2 = waterConnections[index].joint1 + HEIGHTMAP_3D_RESOLUTION;
 
-        index++;
+            index++;
         }
     }
 
@@ -716,11 +733,9 @@ int main(int argc, char *argv[])
     Player player = {0};
     player.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     player.view = (Vector3){ 1.0f, 1.0f, 1.0f };
-    TPE_Vec3 playerInitPos = {0,8000,ROOM_SIZE / 4};
+    TPE_Vec3 playerInitPos = {0,8000,0};
     
     player.mainBody = generateHumanMainBody(playerInitPos);
-    // crear brazos
-
     player.leftArm = generateHumanArm();
     player.rightArm = generateHumanArm();
 
@@ -732,13 +747,20 @@ int main(int argc, char *argv[])
     TPE_Body *testBody = &bodies[tpe_world.bodyCount];
     testBody->jointCount = 1;
     testBody->joints = (TPE_Joint*)MemAlloc(sizeof(TPE_Joint));
-    testBody->joints[0] = TPE_joint(TPE_vec3(100,8000,ROOM_SIZE / 4),BALL_SIZE);
+    testBody->joints[0] = TPE_joint(TPE_vec3(100,8000,0),BALL_SIZE);
     testBody->connectionCount = 0;
     testBody->connections = (TPE_Connection*)MemAlloc(sizeof(TPE_Connection)*testBody->connectionCount);
     TPE_bodyInit(testBody,testBody->joints,testBody->jointCount,testBody->connections,testBody->connectionCount,1);
     tpe_world.bodyCount++;
 
     fprintf(stdout,"[INFO][PYHSICS] Test body generation OK\n");
+
+    // create test human
+    NPC testNPC = {0};
+    playerInitPos = TPE_vec3(2000,8000,0);
+    testNPC.mainBody = generateHumanMainBody(playerInitPos);
+    testNPC.leftArm = generateHumanArm();
+    testNPC.rightArm = generateHumanArm();
     
     fprintf(stdout,"[INFO][PYHSICS] Initalizing world\n");
     // update physics word
@@ -1020,84 +1042,130 @@ int main(int argc, char *argv[])
         TPE_bodyApplyGravity(testBody,
             testBody->joints[0].position.y > 0 ? G : (-2 * G));
         TPE_bodyApplyGravity(player.leftArm,
-            (player.leftArm->joints[0].position.y || player.leftArm->joints[1].position.y) > 0 ? G : (-2 * G));
+            player.leftArm->joints[1].position.y > 0 ? G : 0);
         TPE_bodyApplyGravity(player.rightArm,
-            (player.rightArm->joints[0].position.y || player.rightArm->joints[1].position.y) > 0 ? G : (-2 * G));
+            player.rightArm->joints[1].position.y > 0 ? G : 0);
+        TPE_bodyApplyGravity(testNPC.mainBody,
+            testNPC.mainBody->joints[2].position.y > 0 ? G : (-2 * G));
+        TPE_bodyApplyGravity(testNPC.leftArm,
+            testNPC.leftArm->joints[1].position.y > 0 ? G : 0);
+        TPE_bodyApplyGravity(testNPC.rightArm,
+            testNPC.rightArm->joints[1].position.y > 0 ? G : 0);
         
         player.acceleration = TPE_vec3(0,0,0);
+        testNPC.acceleration = TPE_vec3(0,0,0);
+        
 
         if(TPE_bodyEnvironmentCollideMOD(player.mainBody, tpe_world.environmentFunction) > 0)
-            ON_TERRAIN = true;
-        else ON_TERRAIN = false;
+            player.onTerrain = true;
+        else player.onTerrain = false;
 
         if(player.mainBody->joints[0].position.y < BALL_SIZE*2)
         {
-            ON_WATER = true;
-        }else ON_WATER = false;
+            player.onWater = true;
+        }else player.onWater = false;
 
-        TPE_Unit acceleration;
-        // if(ON_WATER) acceleration = ACC/2;
-        // if(ON_TERRAIN) acceleration = ACC;
+        if(TPE_bodyEnvironmentCollideMOD(testNPC.mainBody, tpe_world.environmentFunction) > 0)
+            testNPC.onTerrain = true;
+        else testNPC.onTerrain = false;
+
+        if(testNPC.mainBody->joints[0].position.y < BALL_SIZE*2)
+        {
+            testNPC.onWater = true;
+        }else testNPC.onWater = false;
+
+        // if(player.onWater) acceleration = ACC/2;
+        // if(player.onTerrain) acceleration = ACC;
         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
-            acceleration = 2;
+            player.maxAcceleration = 2;
         }else if(IsKeyDown(KEY_LEFT_SHIFT))
         {
-            if(ON_WATER) acceleration = 10;
-            if(ON_TERRAIN) acceleration = 40;
+            if(player.onWater) player.maxAcceleration = 10;
+            if(player.onTerrain) player.maxAcceleration = 40;
         }else
         {
-            if(ON_WATER) acceleration = 5;
-            if(ON_TERRAIN) acceleration = 30;
+            if(player.onWater) player.maxAcceleration = 5;
+            if(player.onTerrain) player.maxAcceleration = 30;
         }
 
+        if(testNPC.onWater) testNPC.maxAcceleration = 5;
+        if(testNPC.onTerrain) testNPC.maxAcceleration = 30;
 
-        if(ON_TERRAIN || ON_WATER)
+
+        if(player.onTerrain || player.onWater)
         {
             if (IsKeyDown(KEY_W))
             // player.acceleration.z = -acceleration;
             player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*5,tangente.y*5,tangente.z*5},1024));
             // TPE_bodyAccelerate(&bodies[1],TPE_vec3(0,0,ACC));
             if (IsKeyDown(KEY_S))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*10,tangente.y*10,tangente.z*10},-1024));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){tangente.x*5,tangente.y*5,tangente.z*5},-1024));
             if (IsKeyDown(KEY_D))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},-1024));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*5,ortoTangente.y*5,ortoTangente.z*5},-1024));
             if (IsKeyDown(KEY_A))
-                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*10,ortoTangente.y*10,ortoTangente.z*10},1024));
+                player.acceleration = TPE_vec3Plus(player.acceleration,TPE_vec3TimesPlain((TPE_Vec3){ortoTangente.x*5,ortoTangente.y*5,ortoTangente.z*5},1024));
             
-            Vector3 auxAcc = Vector3Scale(Vector3Normalize((Vector3){player.acceleration.x,player.acceleration.y,player.acceleration.z}),acceleration);
+            Vector3 auxAcc = Vector3Scale(Vector3Normalize((Vector3){player.acceleration.x,player.acceleration.y,player.acceleration.z}),player.maxAcceleration);
         
             player.acceleration.x = (TPE_Unit)auxAcc.x;
             player.acceleration.y = (TPE_Unit)auxAcc.y;
             player.acceleration.z = (TPE_Unit)auxAcc.z;
 
             if (IsKeyDown(KEY_SPACE))
-                player.acceleration.y = acceleration*4;
+                player.acceleration.y = player.maxAcceleration*4;
             if (IsKeyDown(KEY_LEFT_CONTROL))
-                player.acceleration.y = -acceleration*4;
+                player.acceleration.y = -player.maxAcceleration*4;
         }
 
         TPE_bodyAccelerate(player.mainBody, player.acceleration);
 
+        if(testNPC.onTerrain || testNPC.onWater)
+        {
+            testNPC.acceleration = TPE_vec3Plus(testNPC.acceleration,TPE_vec3TimesPlain((TPE_Vec3){testNPCtangente.x*5,testNPCtangente.y*5,testNPCtangente.z*5},1024));
+            Vector3 testNPCauxAcc = Vector3Scale(Vector3Normalize((Vector3){testNPC.acceleration.x,testNPC.acceleration.y,testNPC.acceleration.z}),testNPC.maxAcceleration);
+
+            testNPC.acceleration.x = (TPE_Unit)testNPCauxAcc.x;
+            testNPC.acceleration.y = (TPE_Unit)testNPCauxAcc.y;
+            testNPC.acceleration.z = (TPE_Unit)testNPCauxAcc.z;
+        }
+
+        if(Vector3Distance(player.position,testNPC.position) > 5)
+            TPE_bodyAccelerate(testNPC.mainBody, testNPC.acceleration);
+
         // [TODO] borrar esto, la solución es detectar con más precisión la colisión con el terreno o más bien cuando se está aplicando o no la fricción entre ambos
-        if(!ON_TERRAIN)
+        if(!player.onTerrain)
         {
             TPE_bodyAccelerate(player.mainBody, TPE_vec3(-player.mainBody->joints[0].velocity[0]*0.008f,0,-player.mainBody->joints[0].velocity[2]*0.008f));
         }
-        if(ON_WATER)
+        if(player.onWater)
         {
             TPE_bodyAccelerate(player.mainBody, TPE_vec3(-player.mainBody->joints[0].velocity[0]*0.05f,0,-player.mainBody->joints[0].velocity[2]*0.005f));
+        }
+        if(!testNPC.onTerrain)
+        {
+            TPE_bodyAccelerate(testNPC.mainBody, TPE_vec3(-testNPC.mainBody->joints[0].velocity[0]*0.008f,0,-testNPC.mainBody->joints[0].velocity[2]*0.008f));
+        }
+        if(testNPC.onWater)
+        {
+            TPE_bodyAccelerate(testNPC.mainBody, TPE_vec3(-testNPC.mainBody->joints[0].velocity[0]*0.05f,0,-testNPC.mainBody->joints[0].velocity[2]*0.005f));
         }
 
         player.position.x = (float)player.mainBody->joints[0].position.x*SCALE_3D; 
         player.position.y = (float)player.mainBody->joints[0].position.y*SCALE_3D;
         player.position.z = (float)player.mainBody->joints[0].position.z*SCALE_3D;
+        testNPC.position.x = (float)testNPC.mainBody->joints[0].position.x*SCALE_3D; 
+        testNPC.position.y = (float)testNPC.mainBody->joints[0].position.y*SCALE_3D;
+        testNPC.position.z = (float)testNPC.mainBody->joints[0].position.z*SCALE_3D;
 
-        // creo que funciona mejor fijar las junturas a mano que usando la función jointPin. revisar
-        // me parece que es porque joint pin anula todas las velocidades, es como para fijar la juntura a un punto que no va a moverse. pero si el punto al que se fija la juntura es móvil medio que no anda bien.
-        // TPE_jointPin(&player.leftArm->joints[0],TPE_vec3Plus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D)));
-        player.leftArm->joints[0].position = TPE_vec3Plus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
-        player.rightArm->joints[0].position = TPE_vec3Minus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
+        testNPC.view = Vector3Normalize(Vector3Subtract(player.position,testNPC.position));
+        Vector3 testNPChitNormal = getTerrainNormal(Vector3Scale((Vector3){testNPC.mainBody->joints[0].position.x,testNPC.mainBody->joints[0].position.y,testNPC.mainBody->joints[0].position.z},SCALE_3D));
+        testNPCortoTangente = Vector3CrossProduct(testNPChitNormal, testNPC.view);
+        testNPCtangente = Vector3CrossProduct(testNPChitNormal, testNPCortoTangente);
+        testNPCtangente = Vector3Scale(testNPCtangente,Vector3DotProduct(testNPC.view,testNPCtangente)/pow(Vector3Length(testNPCtangente),2));
+        testNPCtangente = Vector3Normalize(testNPCtangente);
+        testNPCortoTangente = Vector3Normalize(testNPCortoTangente);
+        testNPC.target = Vector3Add(testNPC.view, testNPC.position);
 
         Vector3 hitNormal = getTerrainNormal(player.position);
 
@@ -1159,6 +1227,16 @@ int main(int argc, char *argv[])
             camera.fovy = 80.0f;
             camera.projection = CAMERA_PERSPECTIVE;
         }
+
+        
+        // creo que funciona mejor fijar las junturas a mano que usando la función jointPin. revisar
+        // me parece que es porque joint pin anula todas las velocidades, es como para fijar la juntura a un punto que no va a moverse. pero si el punto al que se fija la juntura es móvil medio que no anda bien.
+        // TPE_jointPin(&player.leftArm->joints[0],TPE_vec3Plus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D)));
+        player.leftArm->joints[0].position = TPE_vec3Plus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
+        player.rightArm->joints[0].position = TPE_vec3Minus(player.mainBody->joints[1].position,TPE_vec3(ortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,ortoTangente.z*0.5/SCALE_3D));
+
+        testNPC.leftArm->joints[0].position = TPE_vec3Plus(testNPC.mainBody->joints[1].position,TPE_vec3(testNPCortoTangente.x*0.5/SCALE_3D,0.2/SCALE_3D,testNPCortoTangente.z*0.5/SCALE_3D));
+        testNPC.rightArm->joints[0].position = TPE_vec3Minus(testNPC.mainBody->joints[1].position,TPE_vec3(testNPCortoTangente.x*0.5/SCALE_3D,-0.2/SCALE_3D,testNPCortoTangente.z*0.5/SCALE_3D));
 
         TPE_Vec3 testBodyVMin, testBodyVMax;
         TPE_bodyGetAABB(testBody, &testBodyVMin, &testBodyVMax);
@@ -1248,6 +1326,21 @@ int main(int argc, char *argv[])
                 {
                     DrawSphereEx(Vector3Scale((Vector3){player.rightArm->joints[i].position.x,player.rightArm->joints[i].position.y,player.rightArm->joints[i].position.z},SCALE_3D),player.rightArm->joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, DARKGRAY);
                 }
+                // draw body
+                for(int i = 0; i < testNPC.mainBody->jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){testNPC.mainBody->joints[i].position.x,testNPC.mainBody->joints[i].position.y,testNPC.mainBody->joints[i].position.z},SCALE_3D),testNPC.mainBody->joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, BLACK);
+                }
+                // draw left hand and shoulder
+                for(int i = 0; i < testNPC.leftArm->jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){testNPC.leftArm->joints[i].position.x,testNPC.leftArm->joints[i].position.y,testNPC.leftArm->joints[i].position.z},SCALE_3D),testNPC.leftArm->joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, BLACK);
+                }
+                // draw right hand and shoulder
+                for(int i = 0; i < testNPC.rightArm->jointCount; i++)
+                {
+                    DrawSphereEx(Vector3Scale((Vector3){testNPC.rightArm->joints[i].position.x,testNPC.rightArm->joints[i].position.y,testNPC.rightArm->joints[i].position.z},SCALE_3D),testNPC.rightArm->joints[i].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, BLACK);
+                }
                 // draw test ball
                 DrawSphereEx(Vector3Scale((Vector3){testBody->joints[0].position.x,testBody->joints[0].position.y,testBody->joints[0].position.z},SCALE_3D),testBody->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D,10, 10, ORANGE);
                 BeginShaderMode(shader);
@@ -1275,6 +1368,8 @@ int main(int argc, char *argv[])
                 // draw arms
                 DrawCylinderEx(Vector3Scale((Vector3){player.leftArm->joints[0].position.x,player.leftArm->joints[0].position.y,player.leftArm->joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){player.leftArm->joints[1].position.x,player.leftArm->joints[1].position.y,player.leftArm->joints[1].position.z},SCALE_3D),player.leftArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,player.leftArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
                 DrawCylinderEx(Vector3Scale((Vector3){player.rightArm->joints[0].position.x,player.rightArm->joints[0].position.y,player.rightArm->joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){player.rightArm->joints[1].position.x,player.rightArm->joints[1].position.y,player.rightArm->joints[1].position.z},SCALE_3D),player.rightArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,player.rightArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,DARKGRAY);
+                DrawCylinderEx(Vector3Scale((Vector3){testNPC.leftArm->joints[0].position.x,testNPC.leftArm->joints[0].position.y,testNPC.leftArm->joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){testNPC.leftArm->joints[1].position.x,testNPC.leftArm->joints[1].position.y,testNPC.leftArm->joints[1].position.z},SCALE_3D),testNPC.leftArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,testNPC.leftArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,BLACK);
+                DrawCylinderEx(Vector3Scale((Vector3){testNPC.rightArm->joints[0].position.x,testNPC.rightArm->joints[0].position.y,testNPC.rightArm->joints[0].position.z},SCALE_3D),Vector3Scale((Vector3){testNPC.rightArm->joints[1].position.x,testNPC.rightArm->joints[1].position.y,testNPC.rightArm->joints[1].position.z},SCALE_3D),testNPC.rightArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2,testNPC.rightArm->joints[0].sizeDivided*TPE_JOINT_SIZE_MULTIPLIER*SCALE_3D/2, 5,BLACK);
                 // draw test cube
                 DrawCubeWires((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z*SCALE_3D},TEST_CUBE_SIZE.x*2*SCALE_3D,TEST_CUBE_SIZE.y*2*SCALE_3D,TEST_CUBE_SIZE.z*2*SCALE_3D,BLACK);
                 DrawCube((Vector3){TEST_CUBE_CENTER.x*SCALE_3D,TEST_CUBE_CENTER.y*SCALE_3D,TEST_CUBE_CENTER.z*SCALE_3D},
@@ -1356,9 +1451,9 @@ int main(int argc, char *argv[])
                 DrawText(TextFormat("AUX: %d\t%d\t%d\tCHU: %d\t%d",ENV_X_AUX,ENV_Y_AUX,ENV_Z_AUX,ENV_X_CHU,ENV_Z_CHU), 10, 20*4+10, 20, RED);
                 DrawText(TextFormat("PER: %d\t%d\t%d",ENV_X_PER,ENV_Y_PER,ENV_Z_PER), 10, 20*5+10, 20, RED);
                 DrawText(TextFormat("TAN: %d\t%d\t%d",player.acceleration.x,player.acceleration.y,player.acceleration.z), 10, 20*6+10, 20, RED);
-                DrawText(TextFormat("COL: %d",TPE_bodyEnvironmentCollideMOD(player.mainBody,tpe_world.environmentFunction)), 10, 20*7+10, 20, RED);
+                DrawText(TextFormat("COL: %d",player.onTerrain), 10, 20*7+10, 20, RED);
                 DrawText(TextFormat("HIT: %d",TPE_checkOverlapAABB(testBodyVMin, testBodyVMax, attackZoneVMin, attackZoneVMax)), 10, 20*8+10, 20, RED);
-                // DrawText(TextFormat("COL: %d",player.mainBody->joints[0].sizeDivided), 10, 20*7+10, 20, RED);
+                DrawText(TextFormat("COL: %d",testNPC.onTerrain), 10, 20*9+10, 20, RED);
 
                 DrawText(TextFormat("ATTACK: %s",attackLog), 10, WINDOW_HEIGHT-20, 20, ORANGE);
             }
